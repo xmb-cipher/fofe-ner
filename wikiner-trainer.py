@@ -30,7 +30,7 @@ if __name__ == '__main__':
                          help = 'momentum value when MomentumOptimizer is used' )
     parser.add_argument( '--max_iter', type = int, default = 16,
                          help = 'maximum number of iterations' )
-    parser.add_argument( '--feature_choice', type = int, default = 63,
+    parser.add_argument( '--feature_choice', type = int, default = 767,
                          help = 'the features used are pick with a bit mask. They are ' + 
                                 '1) case-insensitive bfofe with candidate word(s), ' +
                                 '2) case-insensitive bfofe without candidate word(s), ' + 
@@ -106,22 +106,22 @@ if __name__ == '__main__':
     ################################################################################
 
     # TODO, try wikiNER
-    if config.enable_distant_supervision:
-        # folder = 'gigaword'
-        # filelist =  [ f for f in os.listdir( folder ) \
-        #                 if f.endswith('.txt') and \
-        #                     os.path.getsize('gigaword/%s' % f) < 16 * 1024 * 1024 ]
-        # random.shuffle( filelist )
-        # logger.info( filelist )
-        # logger.info( 'the smallest %d files are used' % len(filelist) )
-        # config.max_iter = len(filelist)
-        folder = '/eecs/research/asr/Shared/Reuters-RCV1/second-half/senna-labeled'
-        filelist =  os.listdir( folder )
-        random.shuffle( filelist )
-        logger.info( filelist )
-        config.max_iter = min( len(filelist), config.max_iter )
-        logger.info( 'There are %d machine-labeled files. %d will be used.' % \
-                     (len(filelist), config.max_iter) )
+    # if config.enable_distant_supervision:
+    #     # folder = 'gigaword'
+    #     # filelist =  [ f for f in os.listdir( folder ) \
+    #     #                 if f.endswith('.txt') and \
+    #     #                     os.path.getsize('gigaword/%s' % f) < 16 * 1024 * 1024 ]
+    #     # random.shuffle( filelist )
+    #     # logger.info( filelist )
+    #     # logger.info( 'the smallest %d files are used' % len(filelist) )
+    #     # config.max_iter = len(filelist)
+    #     folder = '/eecs/research/asr/Shared/Reuters-RCV1/second-half/senna-labeled'
+    #     filelist =  os.listdir( folder )
+    #     random.shuffle( filelist )
+    #     logger.info( filelist )
+    #     config.max_iter = min( len(filelist), config.max_iter )
+    #     logger.info( 'There are %d machine-labeled files. %d will be used.' % \
+    #                  (len(filelist), config.max_iter) )
 
     ################################################################################
 
@@ -138,21 +138,24 @@ if __name__ == '__main__':
 
     conll2003_gazetteer = gazetteer( args.data_path + '/all-eng.gaz' )
 
-    train = batch_constructor( CoNLL2003( args.data_path + '/eng.train' ), 
+    train = batch_constructor( #CoNLL2003( args.data_path + '/eng.train' ), 
+                               CoNLL2003( 'wikiNER/wikiNER.train' ),
                                numericizer1, numericizer2, 
                                gazetteer = conll2003_gazetteer, 
                                alpha = config.word_alpha, 
                                window = config.n_window )
     logger.info( 'train: ' + str(train) )
 
-    valid = batch_constructor( CoNLL2003( args.data_path + '/eng.testa' ), 
+    valid = batch_constructor( # CoNLL2003( args.data_path + '/eng.testa' ), 
+                               CoNLL2003( 'wikiNER/wikiNER.dev' ),
                                numericizer1, numericizer2, 
                                gazetteer = conll2003_gazetteer, 
                                alpha = config.word_alpha, 
                                window = config.n_window )
     logger.info( 'valid: ' + str(valid) )
 
-    test  = batch_constructor( CoNLL2003( args.data_path + '/eng.testb' ), 
+    test  = batch_constructor( #CoNLL2003( args.data_path + '/eng.testb' ), 
+                               CoNLL2003( 'wikiNER/wikigold.conll.txt' ),
                                numericizer1, numericizer2, 
                                gazetteer = conll2003_gazetteer, 
                                alpha = config.word_alpha, 
@@ -168,11 +171,17 @@ if __name__ == '__main__':
     best_test_fb1 = 0
 
     if config.enable_distant_supervision:
-        machine = train
-        infinite = machine.infinite_mini_batch_multi_thread( 
+        wikiNER = batch_constructor( CoNLL2003( 'wikiNER/wikiNER.all' ), 
+                                     numericizer1, numericizer2, 
+                                     gazetteer = conll2003_gazetteer, 
+                                     alpha = config.word_alpha, 
+                                     window = config.n_window )
+        infinite = wikiNER.infinite_mini_batch_multi_thread( 
                             config.n_batch_size, True, 
-                            config.overlap_rate, config.disjoint_rate, 
+                            config.overlap_rate / 2, config.disjoint_rate / 2, 
                             config.feature_choice, True )
+        logger.info( 'wikiNER: ' + str(wikiNER) )
+        logger.info( 'wikiNER loaded' )
 
     for n_epoch in xrange( config.max_iter ):
 
@@ -191,14 +200,6 @@ if __name__ == '__main__':
         # phar is used to observe training progress
         logger.info( 'epoch %2d, learning-rate: %f' % \
                         (n_epoch + 1, mention_net.config.learning_rate) )
-        if config.enable_distant_supervision:
-            train = batch_constructor( # gigaword( 'gigaword/' + filelist[n_epoch] ), 
-                                       CoNLL2003( os.path.join(folder, filelist[n_epoch]) ), 
-                                       numericizer1, numericizer2, 
-                                       gazetteer = conll2003_gazetteer, 
-                                       alpha = config.word_alpha, 
-                                       window = config.n_window )
-            logger.info( 'train: ' + str(train) )
 
         pbar = tqdm( total = len(train.positive) + 
                              int(len(train.overlap) * config.overlap_rate) +
@@ -276,7 +277,8 @@ if __name__ == '__main__':
 
         if n_epoch >= config.max_iter / 4:
 
-            pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testa' ), 
+            pp = [ p for p in PredictionParser( #SampleGenerator( config.data_path + '/eng.testa' ), 
+                                                SampleGenerator( 'wikiNER/wikiNER.dev' ),
                                                 'conll2003-result/conll2003-valid.predicted', 
                                                 config.n_window ) ]
 
@@ -319,8 +321,7 @@ if __name__ == '__main__':
         cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d --config=%s ' \
                         % ( best_threshold, best_algorithm, config.n_window, 
                             'conll2003-model/%s.config' % args.model ) ) + \
-              ('%s/eng.testa conll2003-result/conll2003-valid.predicted | conlleval' \
-                        % config.data_path)
+              ('wikiNER/wikiNER.dev conll2003-result/conll2003-valid.predicted | conlleval')
         process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
         (out, err) = process.communicate()
         exit_code = process.wait()
@@ -328,8 +329,7 @@ if __name__ == '__main__':
 
         cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d ' \
                         % ( best_threshold, best_algorithm, config.n_window ) ) + \
-              ('%s/eng.testb conll2003-result/conll2003-test.predicted | conlleval' \
-                        % config.data_path)
+              ('wikiNER/wikigold.conll.txt conll2003-result/conll2003-test.predicted | conlleval')
         process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
         (out, err) = process.communicate()
         logger.info( 'test, global threshold\n' + out )

@@ -111,11 +111,12 @@ class mention_config( object ):
         # I put some placeholders here; they will be eventually modified
         self.algorithm = 1          # highest first
         self.threshold = 0.5
-        self.drop_rate = 0.4096 if self.dropout else 0
+        # self.drop_rate = 0.4096 if self.dropout else 0
+        self.drop_rate = 0.512 if self.dropout else 0
         self.n_word1 = 100000
         self.n_word2 = 100000
-        self.n_word_embedding1 = 128
-        self.n_word_embedding2 = 128
+        self.n_word_embedding1 = 256
+        self.n_word_embedding2 = 256
         self.customized_threshold = None
         assert len( self.kernel_height ) == len( self.kernel_depth )
 
@@ -547,9 +548,9 @@ class fofe_mention_net( object ):
             self.train_step.append( char_conv_train_step )
 
         if feature_choice & (1 << 10) > 0:
-            bigram_train_step = tf.train.GradientDescentOptimizer( lr / 2, use_locking = True )\
+            bigram_train_step = tf.train.GradientDescentOptimizer( self.lr / 2, use_locking = True )\
                                         .minimize( self.xent, var_list = [ self.bigram_embedding ] )
-            self.train_step.append( self.bigram_train_step )
+            self.train_step.append( bigram_train_step )
 
         if hope_out > 0:
             ui_norm = tf.sqrt( tf.reduce_sum( U ** 2, 
@@ -632,6 +633,11 @@ class fofe_mention_net( object ):
                                                 self.ri_fofe: dense_feature[:,384:512],
                                                 self.ner_cls_match: dense_feature[:,512:],
                                                 self.char_idx: conv_idx,
+                                                self.lbc_values : l5_values,
+                                                self.lbc_indices : l5_indices,
+                                                self.rbc_values : r5_values,
+                                                self.rbc_indices : r5_indices,
+                                                self.shape3 : (target.shape[0], 96 * 96),
                                                 self.label: target,
                                                 self.lr: self.config.learning_rate,
                                                 self.keep_prob: 1 - self.config.drop_rate } )[-1]
@@ -699,6 +705,11 @@ class fofe_mention_net( object ):
                                                         self.ri_fofe: dense_feature[:,384:512],
                                                         self.ner_cls_match: dense_feature[:,512:],
                                                         self.char_idx: conv_idx,
+                                                        self.lbc_values : l5_values,
+                                                        self.lbc_indices : l5_indices,
+                                                        self.rbc_values : r5_values,
+                                                        self.rbc_indices : r5_indices,
+                                                        self.shape3 : (target.shape[0], 96 * 96),
                                                         self.label: target,
                                                         self.keep_prob: 1 } ) 
 

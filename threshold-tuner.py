@@ -3,63 +3,6 @@
 import numpy, argparse, logging, time, cPickle, codecs, copy
 from itertools import product, chain
 
-# ================================================================================
-
-
-class CustomizedThreshold( object ):
-    def update_state( self, previous_solution ):
-        self.solution.append( previous_solution )
-
-    def restore_state( self ):
-        self.solution.pop()
-
-    def keep( self, candidate, estimate, table, global_threshold ):
-        b, e, c = candidate
-        return table[b][e - 1][1] >= global_threshold
-
-
-
-class ORGcoverGPE( object ):
-    def __init__( self, gpe_covered_by_org ):
-        self.gpe_covered_by_org = gpe_covered_by_org
-        self.solution = [ set() ]
-
-    def update_state( self, previous_solution ):
-        self.solution.append( previous_solution )
-
-    def restore_state( self ):
-        self.solution.pop()
-
-    def keep( self, candidate, estimate, table, global_threshold ):
-        b, e, c = candidate
-        if c == 2:
-            for bb, ee, cc in self.solution[-1]:
-                if bb <= b < e <= ee and cc == 1:
-                    return table[b][e - 1][1] >= self.gpe_covered_by_org
-        return table[b][e - 1][1] >= global_threshold
-
-
-class IndividualThreshold( object ):
-    def __init__( self, outer, inner ):
-        self.outer = outer
-        self.inner = inner
-        self.solution = [ set() ]
-
-    def update_state( self, previous_solution ):
-        self.solution.append( previous_solution )
-
-    def restore_state( self ):
-        self.solution.pop()
-    
-    def keep( self, candidate, estimate, table, global_threshold ):
-        b, e, c = candidate
-        if len(self.solution[-1]) == 0:
-            return table[b][e - 1][1] >= self.outer[c]
-        else:
-            return table[b][e - 1][1] >= self.inner if not isinstance( self.inner, list ) \
-                    else table[b][e - 1][1] >= self.inner[c]
-
-
 
 # ================================================================================
 

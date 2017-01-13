@@ -76,36 +76,38 @@ def process_one_file( input_dir, output_dir, filename, solution, language, sente
 
         post_offset = tag.find( u'<post' )
         if post_offset != -1:
-            author_offset = tag.find( u'author', post_offset )
-            begin_offset = tag.find( u'"', author_offset ) + 1
-            end_offset = tag.find( u'"', begin_offset )
+            author_offset = tag.find( u'author', post_offset ) 
 
-            post_au = tag[begin_offset: end_offset]
-            n_leading = len(post_au) - len(post_au.lstrip())   
+            if post_offset != -1:
+                begin_offset = tag.find( u'"', author_offset ) + 1
+                end_offset = tag.find( u'"', begin_offset )
 
-            candidate = ( begin_offset + lsb + n_leading, 
-                          begin_offset + lsb + \
-                            len(tag[begin_offset: end_offset].rstrip()) )         
+                post_au = tag[begin_offset: end_offset]
+                n_leading = len(post_au) - len(post_au.lstrip())   
 
-            logger.debug( data[candidate[0]:candidate[1]] )
+                candidate = ( begin_offset + lsb + n_leading, 
+                              begin_offset + lsb + \
+                                len(tag[begin_offset: end_offset].rstrip()) )         
 
-            if filename in solution:
-                if candidate in solution[filename]:
-                    tags += u'(%d,%d)' % candidate + \
-                            u'(%s,%s,%s)\n' % tuple(solution[filename][candidate][1:])
-                    solution[filename].pop( candidate )
-                else:   # deal with mis-labled offset
-                    for low, high in solution[filename].keys():
-                        if tag[begin_offset: end_offset] == \
-                                    solution[filename][(low,high)][0] \
-                                    and candidate[0] <= high and low <= candidate[1]:   
-                            tags += u'(%d,%d)' % (low, high) + \
-                                    u'(%s,%s,%s)\n' % tuple(solution[filename][(low,high)][1:]) 
-                            solution[filename].pop( (low,high) )
+                logger.debug( data[candidate[0]:candidate[1]] )
 
-            # post authors are detected during prepocessing
-            # this line is part of the final output
-            tags += u'(%d,%d) ' % candidate + data[candidate[0]:candidate[1]] + u'\n'
+                if filename in solution:
+                    if candidate in solution[filename]:
+                        tags += u'(%d,%d)' % candidate + \
+                                u'(%s,%s,%s)\n' % tuple(solution[filename][candidate][1:])
+                        solution[filename].pop( candidate )
+                    else:   # deal with mis-labled offset
+                        for low, high in solution[filename].keys():
+                            if tag[begin_offset: end_offset] == \
+                                        solution[filename][(low,high)][0] \
+                                        and candidate[0] <= high and low <= candidate[1]:   
+                                tags += u'(%d,%d)' % (low, high) + \
+                                        u'(%s,%s,%s)\n' % tuple(solution[filename][(low,high)][1:]) 
+                                solution[filename].pop( (low,high) )
+
+                # post authors are detected during prepocessing
+                # this line is part of the final output
+                tags += u'(%d,%d) ' % candidate + data[candidate[0]:candidate[1]] + u'\n'
         tags += u'\n'
 
 

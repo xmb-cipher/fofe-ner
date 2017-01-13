@@ -16,9 +16,13 @@ if __name__ == '__main__':
     parser.add_argument( '--language', type = str, default = 'eng',
                          choices = [ 'eng', 'cmn', 'spa' ]  )
     parser.add_argument( '--run_id', type = int, default = 1 )
+    parser.add_argument( '--post_author_list', type = str, default = None )
 
     args = parser.parse_args()
     cnt = 0
+
+    if args.post_author_list:
+        post_author_list = codecs.open( args.post_author_list, 'wb', 'utf8' )
 
     with codecs.open( args.output, 'wb', 'utf8' ) as outfile:
         for filename in os.listdir( args.input_dir ):
@@ -85,5 +89,11 @@ if __name__ == '__main__':
                                             # u'1.0', u'N', u'N', u'N' ] )
                     outfile.write( out_str + u'\n' )
 
+                    if args.post_author_list:
+                        post_author_list.write( u'%s:%d-%d\n' % (filename, c_begin, c_end - 1) )
+
             logger.info( '%s processed' % filename )
+
+    if args.post_author_list:
+        post_author_list.close()
 

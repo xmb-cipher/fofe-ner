@@ -13,3 +13,5 @@ function INFO() {
 rm -rf *.pyc
 rm -rf build
 rm -rf checkpoint
+rm -rf *.so
+rm -f `find ./ -maxdepth 1 -type l`

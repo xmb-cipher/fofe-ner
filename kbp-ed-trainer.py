@@ -133,7 +133,7 @@ if __name__ == '__main__':
     
     # it's assumed that there are exactly 2 files in 'data_path'
     # namely 'ed-eng-train' and 'ed-eng-eval'
-    kbp_gazetteer = gazetteer( config.data_path + '/kbp-gazetteer' )
+    kbp_gazetteer = gazetteer( config.data_path + '/kbp-gazetteer', mode = 'KBP' )
 
     source = imap( lambda x: x[:4],
                     LoadED( config.data_path + '/%s-train-parsed' % config.language ) ) 

@@ -197,19 +197,23 @@ def gazetteer( filename, mode = 'CoNLL2003' ):
     -------
         result : list of set
     """
-    if mode == 'CONLL2003':
+    if mode == 'CoNLL2003':
+        logger.info( 'Loading CoNLL2003 4-type gazetteer' )
         result = [ set() for _ in xrange(4) ]
         ner2cls = { 'PER' : 0, 'LOC' : 1, 'ORG' : 2, 'MISC' : 3 }
-        with codecs.open(filename, 'rb') as text_file:
+        # with codecs.open(filename, 'rb', 'utf8') as text_file:
+        with open( filename, 'rb' ) as text_file:
             for line in text_file:
+                line = line.decode('utf-8','ignore').encode('utf-8')
                 tokens = line.strip().split( None, 1 )
                 if len(tokens) == 2:
                     result[ ner2cls[tokens[0]] ].add( tokens[1] )
     else:
+        logger.info( 'Loading KBP 6-type gazetteer' )
         result = [ set() for _ in xrange(7) ]
         ner2cls = { '<PER>' : 0, '<ORG>' : 1, '<GPE>' : 2, 
                     '<LOC>' : 3, '<FAC>' : 4, '<TTL>' : 5 }
-        with codecs.open(filename, 'rb') as text_file:
+        with codecs.open(filename, 'rb', 'utf8') as text_file:
             for line in text_file:
                 tokens = line.strip().rsplit( None, 1 )
                 if len(tokens) == 2 and tokens[1] in ner2cls:
@@ -245,7 +249,7 @@ def CoNLL2003( filename ):
                 'B-MISC' : 3, 'I-MISC' : 3 }
     sentence, ner_begin, ner_end, ner_label, last_ner = [], [], [], [], 4
 
-    with codecs.open( filename, 'rb' ) as text_file:
+    with codecs.open( filename, 'rb', 'utf8' ) as text_file:
         for line in text_file:
             tokens = line.strip().split()
 
@@ -1129,7 +1133,7 @@ def SampleGenerator( filename ):
         
         tokens = line.split()
 
-        if len(tokens) == 4:
+        if len(tokens) > 1:
             word, ner = tokens[0], ner2idx[ tokens[-1].split('-')[-1] ]
             if ner != lastNer:
                 if lastNer != 4:
@@ -1263,6 +1267,65 @@ def SentenceIterator( filename ):
     #         yield sent.strip().split()
 
 
+################################################################################
+
+class CustomizedThreshold( object ):
+    def update_state( self, previous_solution ):
+        self.solution.append( previous_solution )
+
+    def restore_state( self ):
+        self.solution.pop()
+
+    def keep( self, candidate, estimate, table, global_threshold ):
+        b, e, c = candidate
+        return table[b][e - 1][1] >= global_threshold
+
+
+
+class ORGcoverGPE( CustomizedThreshold ):
+    """
+    Some ORGs are named by GPEs, e,g, University of Toronto.
+    No improvement is shown in KBP2015
+    """
+    def __init__( self, gpe_covered_by_org ):
+        self.gpe_covered_by_org = gpe_covered_by_org
+        self.solution = [ set() ]
+
+    def keep( self, candidate, estimate, table, global_threshold ):
+        b, e, c = candidate
+        if c == 2:
+            for bb, ee, cc in self.solution[-1]:
+                if bb <= b < e <= ee and cc == 1:
+                    return table[b][e - 1][1] >= self.gpe_covered_by_org
+        return table[b][e - 1][1] >= global_threshold
+
+
+
+class IndividualThreshold( CustomizedThreshold ):
+    """
+    Numbers of labels are imbalanced. Assign an individual threshold to each class.
+    F1 score increase by 0.5 to 0.6 in KBP2015 
+    """
+    def __init__( self, outer, inner = None ):
+        self.outer = outer
+        self.inner = inner
+        self.solution = [ set() ]
+    
+    def keep( self, candidate, estimate, table, global_threshold ):
+        b, e, c = candidate
+        if len(self.solution[-1]) == 0:
+            return table[b][e - 1][1] >= self.outer[c]
+        else:
+            return table[b][e - 1][1] >= self.inner if not isinstance( self.inner, list ) \
+                    else table[b][e - 1][1] >= self.inner[c]
+
+    def __str__( self ):
+        return 'outer: %s' % str(self.outer)
+
+
+################################################################################
+
+
 def __merge_adjacient( estimate ):
     best, i = set(), 0
     while i < len(estimate):
@@ -1340,7 +1403,7 @@ def __decode_algo_3( sentence, estimate, table, threshold, callback = None ):
         removed = set( [ (b, e, c) for (b, e, c) in estimate if table[b][e - 1][1] < threshold ] )
     else:
         removed = set( [ (b, e, c) for (b, e, c) in estimate if \
-                         not callback.keep( (b,c,e), estimate, table, threshold ) ] )
+                         not callback.keep( (b,e,c), estimate, table, threshold ) ] )
 
     estimate = estimate - removed
 
@@ -1417,7 +1480,6 @@ def decode( sentence, estimate, table, threshold, algorithm, callback = None ):
                 if callback is not None:
                     callback.restore_state()
         return result
-
 
 
 

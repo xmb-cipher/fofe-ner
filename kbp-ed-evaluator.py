@@ -29,7 +29,6 @@ if __name__ == '__main__':
     logger.info( str(args) + '\n' )
 
     from fofe_mention_net import *
-    from threshold_tuner import * 
 
     with open( args.basename + '.config', 'rb' ) as fp:
         config = cPickle.load( fp )

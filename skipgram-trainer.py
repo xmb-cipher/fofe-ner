@@ -75,8 +75,10 @@ def sentence_eng( filename, case_sensitive = False ):
                     yield s
     else:
         logger.info( 'start to read ' + filename )
-        with codecs.open( filename, 'rb', 'utf8' ) as fp:
+        # with codecs.open( filename, 'rb', 'utf8' ) as fp:
+        with open( filename, 'rb' ) as fp:
             for line in fp:
+                line = line.decode('utf-8','ignore').encode('utf-8')
                 if not case_sensitive:
                     s = line.strip().lower().split()
                 else:
@@ -164,7 +166,7 @@ def skipgram_eng( filename, min_cnt, max_vocab, n_embedding, n_window,
                                     sg = 1,
                                     negative = 7 )                                      
     model.build_vocab( sentence_eng( filename, case_sensitive ) )
-    for _ in xrange( 6 ):
+    for _ in xrange( 10 ):
         model.train( sentence_eng( filename, case_sensitive ) )
 
     if os.path.isfile( 'questions-words.txt' ):
