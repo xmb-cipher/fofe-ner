@@ -1,0 +1,27 @@
+
+# compiled files
+*.pyc
+*.so
+*.meta
+
+# folder
+build
+conll2003-result
+conll2003-model
+distant-supervision
+gigaword
+iflytek-clean-cmn
+iflytek-clean-eng
+kbp-result
+log
+processed-data
+raw-data
+scratch
+wikiNER
+word2vec
+
+# checkpoint
+checkpoint
+
+# backup
+*.bak
