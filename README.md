@@ -73,8 +73,10 @@ where X is a r.v. and a,b are real constants.
 </post>
 </doc>
 ```
- 
-The parser makes advantage of ```ssplit``` and ```tokenize``` from [CoreNLP Server](http://stanfordnlp.github.io/CoreNLP/corenlp-server.html). It removes all XML tags and assign beginning and ending character offsets to each word (inclusive-exclusive pairs). The results include a the parsed content and direct copy of the original file, separated by 128 "=". First part is dividied by 2 parts too. The first is the tokenized sentences while the second part is to extract "post author" from the xml tags. The above example leads the following if solution is not given:
+
+The parser makes advantage of ```ssplit``` and ```tokenize``` from [CoreNLP Server](http://stanfordnlp.github.io/CoreNLP/corenlp-server.html). It removes all XML tags and assign beginning and ending character offsets to each word (inclusive-exclusive pairs). The results include a the parsed content and direct copy of the original file, separated by 128 "=". First part is dividied by 2 parts too. The first is the tokenized sentences while the second part is to extract "post author" from the xml tags. The above example leads the following:
+
+#### if solution is not given
 
 ```xml
 Random Variables Question
@@ -178,7 +180,7 @@ where X is a r.v. and a,b are real constants.
 </doc>
 ```
 
-and 
+#### if solution is given
 
 ```xml
 Random Variables Question
@@ -286,4 +288,4 @@ where X is a r.v. and a,b are real constants.
 </doc>
 ```
 
-if solution is given. For example, the second sentence is (though incorrectly) labeled ```(7,8,DUMMY,PER,NAM)```. The label is incorrect because the given solution is correct. ```post author``` is automaticlly labeled as ```PERSON NAME```.
+For example, the second sentence is (though incorrectly) labeled ```(7,8,DUMMY,PER,NAM)```. The label is incorrect because the given solution is correct. ```post author``` is automaticlly labeled as ```PERSON NAME```.
