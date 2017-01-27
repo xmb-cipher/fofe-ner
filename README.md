@@ -1,7 +1,7 @@
 A FOFE-based Local Detection Approach for Named Entity Recognition and Mention Detection
 ==========
 
-This repository implements [A FOFE-based Local Detection Approach for Named Entity Reconigtion and Mention Detection](https://arxiv.org/abs/1611.00801) with [TensorFlow](https://www.tensorflow.org/). It ranks 2nd in the [Entity Discovery and Linking (EDL)](http://nlp.cs.rpi.edu/kbp/2016/) in [TAC Knowledge Base Population (KBP) 2016](https://tac.nist.gov//2016/KBP/). 
+This repository implements [A FOFE-based Local Detection Approach for Named Entity Reconigtion and Mention Detection](https://arxiv.org/abs/1611.00801) with [TensorFlow](https://www.tensorflow.org/). It ranks 2nd in the [Entity Discovery and Linking (EDL)](http://nlp.cs.rpi.edu/kbp/2016/) in [TAC Knowledge Base Population (KBP) 2016](https://tac.nist.gov//2016/KBP/).  This document intends to complement the data processing part that is not detailed in the paper. It does NOT explain the algorithms discussed in the paper. 
 
 
 
@@ -293,4 +293,13 @@ For example, the second sentence is (though incorrectly) labeled ```(7,8,DUMMY,P
 
 
 ## kbp-system.py & kbp-ed-trainer.py & conll2003-ner-trainer.py
-They are training schedulers that takes [parsed input](#if-solution-is-not-given-also-input-format-of-the-evaluator) and [labels mentions](#if-solution-is-given-also-inputoutput-format-of-the-trainerevaluator).
+They are training schedulers that takes [parsed article with labels](#if-solution-is-given-also-inputoutput-format-of-the-trainerevaluator). 
+
+
+
+## kbp-ed-evaluator & conll2003-ner-evaluator.py
+They takes [parsed article without labels](#if-solution-is-not-given-also-input-format-of-the-evaluator) and produces [parsed article with labels](#if-solution-is-given-also-inputoutput-format-of-the-trainerevaluator).
+
+
+## reformat.py & merge-tabs.py
+They convert [parsed artiles with labels](#if-solution-is-given-also-inputoutput-format-of-the-trainerevaluator) back the format of KBP golden tab. 
