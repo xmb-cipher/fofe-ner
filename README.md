@@ -293,3 +293,4 @@ For example, the second sentence is (though incorrectly) labeled ```(7,8,DUMMY,P
 
 
 ## kbp-system.py & kbp-ed-trainer.py & conll2003-ner-trainer.py
+They are training schedulers that takes [parsed input](#if-solution-is-not-given) and  [labels mentions](#if-solution-is-given).
