@@ -57,6 +57,37 @@ and ```gigaword2feature.so``` will be generated in the root directory.
 
 Here are the basic ideas:
 
+When a dataset is loaded, we pre-compute and cache the following for each sentence in the memory (Please pay more attention to the ```inclusive``` and ```exclusive``` index descriptions): 
+
+* ```vector<int> numeric```:  
+mapping from words (strings) to word-ids (integers).
+
+* ```vector<string> sentence```:  
+copy of the original sentence, required by character CNN.
+
+* ```vector<vector<int>> left_context_idx``` and ```vector<vector<float>> left_context_data```:  
+Let's say our vocabulory is of size 16 and we want to cache ```[0.243, 0, 0.49, 0, 0, 0, 0, 1, 0, 0, 0.7, 0, 0, 0, 0, 0]```. We cannot afford FOFE's dense form. However, FOFE is very sparse. We would like to record down indices of non-zero cells and the corresponding values, which leads to 2 vectors ```[0, 2, 7, 10]``` and ```[0.243, 0.49, 1, 0.7]```. ```left_contex_idx``` and ```left_context_data``` have the same length as ```numeric```. ```left_context_idx[i]``` and ```left_context_data[i]``` together represents the compressed left FOFE from the begining of the sentence to the ```ith``` word (inclusively).
+
+* ```vector<vector<int>> right_context_idx``` and ```vector<vector<float>> left_context_data```:  
+similar to left ones, ```right_context_idx[i]``` and ```right_context_data[i]``` together represents the compressed right FOFE from the end of the sentence to the ```ith``` word (inclusively).
+
+With the above cached, constructing the representation of the phrase from the ```ith``` (inclusive) word to the ```jth``` (exclusive) word is fast and easy, conceptually: 
+
+if excluding focus word(s)
+```python
+fofe_idx = numpy.concat(left_context_idx[i - 1], right_context_idx[j] + vocab_size)
+fofe_data = numpy.concat(left_context_data[i - 1], right_context_data[j])
+```
+
+if including focus word(s)
+```python
+fofe_idx = numpy.concat(left_context_idx[j - 1], right_context_idx[i] + vocab_size)
+fofe_data = numpy.concat(left_context_data[j - 1], right_context_data[i])
+```
+
+Each training example is associated with a sentence id, a starting index (inclusive) and an ending index (exclusive). A single-producer-single-consumer approach is applied for mini-batch preparation. 
+
+
 
 ## fofe_mention_net.py
 FOFE & DNN models are defined. It defines the training behavior and the evaluatoin behavior. 
