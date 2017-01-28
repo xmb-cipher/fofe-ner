@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# Instead of taking command line arguments, I put predefined hyper parameters here
+# The hyper parameters should be fine-tuned in a non-cross-validation setting.
+
+set -e
+this_script=`which $0`
+this_dir=`dirname ${this_script}`
+. ${this_dir}/less-important/util.sh
+
+if [ $# -ne 2 ] 
+then
+	printf ${KRED}
+	printf "usage: %s <embedding-path> <data-path>\n" $0 1>&2
+	printf "    <embedding-path> : basename of word embedding, e.g. word2vec/reuters256 \n" 1>&2
+	printf "    <data-path>      : directory containing eng.{train,testa,testb}\n" 1>&2
+	printf ${KNRM}
+	exit 1
+fi
+INFO "command executed: $@"
+
+embedding_path=$1 ; shift
+data_path=$1 ; shift
+
+
+dir=`mktemp -d`
+trap "rm -rf ${dir}" EXIT
+INFO "intermediate files are put in ${dir}"
+
+cp -f ${data_path}/eng.testb ${dir}/eng.testb
+cp -f ${data_path}/ner-lst ${dir}/ner-lst
+for i in `seq 0 4`
+do
+	dst="${dir}/split-${i}"
+	mkdir -p ${dst}
+	ln -s ${dir}/eng.testb ${dst}/eng.testb
+	ln -s ${dir}/ner-lst ${dst}/ner-lst
+done
+
+${this_dir}/nfold-split.py ${data_path} ${dir}
+INFO "Here's the file hierarchy"
+tree ${dir} -L 2
+
+
+for i in `seq 0 4`
+do
+	INFO ""
+	INFO "training split-${i}"
+	INFO ""
+
+	${this_dir}/conll2003-ner-trainer.py \
+		${embedding_path} \
+		${dir}/split-${i} \
+		--layer_size 512,512,512 \
+		--n_batch_size 512 \
+		--learning_rate 0.128 \
+		--momentum 0.9 \
+		--max_iter 128 \
+		--feature_choice 575 \
+		--overlap_rate 0.36 \
+		--disjoint_rate 0.09 \
+		--dropout \
+		--char_alpha 0.8 \
+		--word_alpha 0.5 \
+		--model "split-${i}"
+done
+
+
+INFO "evaluating... "

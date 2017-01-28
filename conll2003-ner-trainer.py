@@ -136,7 +136,7 @@ if __name__ == '__main__':
     numericizer2 = vocabulary( config.word_embedding + '-case-sensitive.wordlist', 
                                config.char_alpha, True )
 
-    conll2003_gazetteer = gazetteer( args.data_path + '/all-eng.gaz' )
+    conll2003_gazetteer = gazetteer( args.data_path + '/ner-lst' )
 
     train = batch_constructor( CoNLL2003( args.data_path + '/eng.train' ), 
                                numericizer1, numericizer2, 
