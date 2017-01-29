@@ -230,7 +230,7 @@ def CoNLL2003( filename ):
     Parameters
     ----------
         filename : str
-            path to directory containing NER-annotated Gigaword
+            path to one of eng.{train,testa,testb}
 
     Yields
     ------

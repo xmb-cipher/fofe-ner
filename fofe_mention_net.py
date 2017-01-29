@@ -161,6 +161,9 @@ class fofe_mention_net( object ):
         else:
             self.config = mention_config()
 
+        # TODO: create a graph instead of using default graph
+        #       otherwise, we cannot instantiate multiple fofe_mention_nets
+        tf.reset_default_graph()
         self.session = tf.Session( config = tf.ConfigProto( gpu_options = tf.GPUOptions() ) )
 
 
@@ -734,6 +737,10 @@ class fofe_mention_net( object ):
                 The current model will be restored from basename.{tf,config}
         """
         self.saver.restore( self.session, filename )
+
+
+    def __del__( self ):
+        self.session.close()
 
 
 
