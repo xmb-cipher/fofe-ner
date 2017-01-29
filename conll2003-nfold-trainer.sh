@@ -37,7 +37,7 @@ do
 	ln -s ${dir}/ner-lst ${dst}/ner-lst
 done
 
-${this_dir}/nfold-split.py ${data_path} ${dir}
+${this_dir}/conll2003-nfold-split.py ${data_path} ${dir}
 INFO "Here's the file hierarchy"
 tree ${dir} -L 2
 
@@ -56,7 +56,7 @@ do
 		--learning_rate 0.128 \
 		--momentum 0.9 \
 		--max_iter 128 \
-		--feature_choice 575 \
+		--feature_choice 639 \
 		--overlap_rate 0.36 \
 		--disjoint_rate 0.09 \
 		--dropout \
@@ -67,3 +67,15 @@ done
 
 
 INFO "evaluating... "
+
+${this_dir}/conll2003-nfold-eval.py ${dir}/eng.testb ${dir}/predicted
+
+INFO "final result"
+
+${this_dir}/CoNLL2003eval.py \
+	--threshold `head -1 ${dir}/predicted | cut -d' ' -f1` \
+	--algorithm `head -1 ${dir}/predicted | cut -d' ' -f2` \
+	--n_window `head -1 ${dir}/predicted | cut -d' ' -f3` \
+	${dir}/eng.testb \
+	<(awk "NR > 1" ${dir}/predicted) | \
+${this_dir}/conlleval
