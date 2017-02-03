@@ -3,6 +3,8 @@
 # Instead of taking command line arguments, I put predefined hyper parameters here
 # The hyper parameters should be fine-tuned in a non-cross-validation setting.
 
+export CUDA_VISIBLE_DEVICES=0
+
 set -e
 this_script=`which $0`
 this_dir=`dirname ${this_script}`
