@@ -73,6 +73,8 @@ if __name__ == '__main__':
                          choices = [ 'uniform', 'gaussian' ] )
     parser.add_argument( '--enable_distant_supervision', action = 'store_true', default = False )
     parser.add_argument( '--model', type = str, default = 'hopeless' )
+    parser.add_argument( '--offical_eval', action = 'store_true', default = False,
+                         help = 'invoke official evaluator when true' )
 
     # TODO
     # these hyper parameters are from kbp-ed-trainer
@@ -126,7 +128,7 @@ if __name__ == '__main__':
     ################################################################################
 
     mention_net = fofe_mention_net( config )
-    mention_net.tofile( 'conll2003-model/' + args.model )
+    mention_net.tofile( './conll2003-model/' + args.model )
 
     ########################################################################
 
@@ -232,16 +234,27 @@ if __name__ == '__main__':
 
         cost, cnt = 0, 0
         for example in valid.mini_batch_multi_thread( 
-                            256 if config.feature_choice & (1 << 9) > 0 else 1024, 
+                            640 if config.feature_choice & (1 << 9) > 0 else 1280, 
                             False, 1, 1, config.feature_choice ):
 
             c, pi, pv = mention_net.eval( example )
 
             cost += c * example[-1].shape[0]
             cnt += example[-1].shape[0]
-            for expected, estimate, probability in zip( example[-1], pi, pv ):
-                print >> valid_predicted, '%d  %d  %s' % \
-                        (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
+
+            to_print = numpy.concatenate( 
+                            ( example[-1].astype(numpy.float32).reshape(-1, 1),
+                              pi.astype(numpy.float32).reshape(-1, 1),
+                              pv ),
+                            axis = 1 )
+            numpy.savetxt( valid_predicted, to_print, 
+                           fmt = '%d  %d' + '  %f' * (args.n_label_type + 1) )
+
+            # to_print = []
+            # for exp, est, prob in zip( example[-1], pi, pv ):
+            #     to_print.append( '%d  %d  %s' % \
+            #             (exp, est, '  '.join( [('%f' % x) for x in prob.tolist()] )) )
+            # print >> valid_predicted, '\n'.join( to_print )
 
         valid_cost = cost / cnt 
         valid_predicted.close()
@@ -252,16 +265,27 @@ if __name__ == '__main__':
 
         cost, cnt = 0, 0
         for example in test.mini_batch_multi_thread( 
-                            256 if config.feature_choice & (1 << 9) > 0 else 1024, 
+                            640 if config.feature_choice & (1 << 9) > 0 else 1280, 
                             False, 1, 1, config.feature_choice ):
 
             c, pi, pv = mention_net.eval( example )
 
             cost += c * example[-1].shape[0]
             cnt += example[-1].shape[0]
-            for expected, estimate, probability in zip( example[-1], pi, pv ):
-                print >> test_predicted, '%d  %d  %s' % \
-                        (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
+
+            to_print = numpy.concatenate( 
+                            ( example[-1].astype(numpy.float32).reshape(-1, 1),
+                              pi.astype(numpy.float32).reshape(-1, 1),
+                              pv ),
+                            axis = 1 )
+            numpy.savetxt( test_predicted, to_print, 
+                           fmt = '%d  %d' + '  %f' * (args.n_label_type + 1) )
+
+            # to_print = []
+            # for exp, est, prob in zip( example[-1], pi, pv ):
+            #     to_print.append( '%d  %d  %s' % \
+            #             (exp, est, '  '.join( [('%f' % x) for x in prob.tolist()] )) )
+            # print >> test_predicted, '\n'.join( to_print )
 
         test_cost = cost / cnt 
         test_predicted.close()
@@ -316,30 +340,43 @@ if __name__ == '__main__':
         ########## invoke official evaluator ##########
         ###############################################
 
-        cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d --config=%s ' \
-                        % ( best_threshold, best_algorithm, config.n_window, 
-                            'conll2003-model/%s.config' % args.model ) ) + \
-              ('%s/eng.testa conll2003-result/conll2003-valid.predicted | conlleval' \
-                        % config.data_path)
-        process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
-        (out, err) = process.communicate()
-        exit_code = process.wait()
-        logger.info( 'validation\n' + out )
+        if args.offical_eval:
+            cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d --config=%s ' \
+                            % ( best_threshold, best_algorithm, config.n_window, 
+                                'conll2003-model/%s.config' % args.model ) ) + \
+                  ('%s/eng.testa conll2003-result/conll2003-valid.predicted | conlleval' \
+                            % config.data_path)
+            process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
+            (out, err) = process.communicate()
+            exit_code = process.wait()
+            logger.info( 'validation\n' + out )
 
-        cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d ' \
-                        % ( best_threshold, best_algorithm, config.n_window ) ) + \
-              ('%s/eng.testb conll2003-result/conll2003-test.predicted | conlleval' \
-                        % config.data_path)
-        process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
-        (out, err) = process.communicate()
-        logger.info( 'test, global threshold\n' + out )
+            cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d ' \
+                            % ( best_threshold, best_algorithm, config.n_window ) ) + \
+                  ('%s/eng.testb conll2003-result/conll2003-test.predicted | conlleval' \
+                            % config.data_path)
+            process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
+            (out, err) = process.communicate()
+            logger.info( 'test, global threshold\n' + out )
+            test_fb1 = float(out.split('\n')[1].split()[-1])
+        else:
+            pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testa' ), 
+                                                'conll2003-result/conll2003-valid.predicted', 
+                                                config.n_window ) ]
+            _, _, test_fb1, info = evaluation( pp, best_threshold, best_algorithm, True )
+            logger.info ( 'validation:\n' + info )
 
-        test_fb1 = float(out.split('\n')[1].split()[-1])
+            pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testb' ), 
+                                                'conll2003-result/conll2003-test.predicted', 
+                                                config.n_window ) ]
+            _, _, _, out = evaluation( pp, best_threshold, best_algorithm, True )
+            logger.info ( 'evaluation:\n' + out )
+                    
         if test_fb1 > best_test_fb1:
             best_test_fb1, best_test_info = test_fb1, out
             mention_net.config.threshold = best_threshold
             mention_net.config.algorithm = best_algorithm
-            mention_net.tofile( 'conll2003-model/' + args.model )
+            mention_net.tofile( './conll2003-model/' + args.model )
 
         # cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d --config=%s ' \
         #                 % ( best_threshold, best_algorithm, config.n_window,

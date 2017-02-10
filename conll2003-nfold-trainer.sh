@@ -57,7 +57,7 @@ do
 		--n_batch_size 512 \
 		--learning_rate 0.128 \
 		--momentum 0.9 \
-		--max_iter 128 \
+		--max_iter 64 \
 		--feature_choice 639 \
 		--overlap_rate 0.36 \
 		--disjoint_rate 0.09 \

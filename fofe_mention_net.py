@@ -485,7 +485,8 @@ class fofe_mention_net( object ):
                 not_used.extend( f )
         feature_list = used #+ not_used
 
-        feature = tf.concat( 1, feature_list )
+        # feature = tf.concat( 1, feature_list )
+        feature = tf.concat( feature_list, 1 )
 
         # if hope is used, add one linear layer
         if hope_out > 0:
@@ -500,7 +501,7 @@ class fofe_mention_net( object ):
                 layer_output[-1] = tf.nn.relu( layer_output[-1] )
                 layer_output[-1] = tf.nn.dropout( layer_output[-1], self.keep_prob )
 
-        self.xent = tf.reduce_mean( tf.nn.sparse_softmax_cross_entropy_with_logits( layer_output[-1], self.label ) )
+        self.xent = tf.reduce_mean( tf.nn.sparse_softmax_cross_entropy_with_logits( logits = layer_output[-1], labels = self.label ) )
 
         # In tensorflow, weight decay is coded in objective function
         # for param in  W + b:
@@ -578,7 +579,8 @@ class fofe_mention_net( object ):
 
         logger.info( 'computational graph built\n' )
 
-        self.session.run( tf.initialize_all_variables() )
+        # self.session.run( tf.initialize_all_variables() )
+        self.session.run( tf.global_variables_initializer() )
         self.saver = tf.train.Saver()
 
 
