@@ -1,8 +1,10 @@
 #!/eecs/research/asr/mingbin/python-workspace/hopeless/bin/python
 
 
-import numpy, logging, argparse, time, copy, os, cPickle
+import numpy, logging, argparse, time, copy, os, cPickle, sys
 from subprocess import Popen, PIPE, call
+from Queue import Queue
+from threading import Thread
 
 logger = logging.getLogger( __name__ )
 
@@ -181,11 +183,6 @@ if __name__ == '__main__':
         if not os.path.exists( 'conll2003-result' ):
             os.makedirs( 'conll2003-result' )
 
-        valid_file = 'conll2003-result/conll2003-valid.predicted'
-        test_file = 'conll2003-result/conll2003-test.predicted'
-        valid_predicted = open( valid_file, 'wb' )
-        test_predicted = open( test_file, 'wb' )
-
         #############################################
         ########## go through training set ##########
         #############################################
@@ -232,9 +229,13 @@ if __name__ == '__main__':
         ########## go through validation set ##########
         ###############################################
 
+        valid_file = 'conll2003-result/conll2003-valid.predicted'
+        valid_predicted = open( valid_file, 'wb' )
         cost, cnt = 0, 0
+        to_print = [] 
+
         for example in valid.mini_batch_multi_thread( 
-                            640 if config.feature_choice & (1 << 9) > 0 else 1280, 
+                            2560 if config.feature_choice & (1 << 9) > 0 else 5120, 
                             False, 1, 1, config.feature_choice ):
 
             c, pi, pv = mention_net.eval( example )
@@ -242,63 +243,53 @@ if __name__ == '__main__':
             cost += c * example[-1].shape[0]
             cnt += example[-1].shape[0]
 
-            to_print = numpy.concatenate( 
-                            ( example[-1].astype(numpy.float32).reshape(-1, 1),
-                              pi.astype(numpy.float32).reshape(-1, 1),
-                              pv ),
-                            axis = 1 )
-            numpy.savetxt( valid_predicted, to_print, 
-                           fmt = '%d  %d' + '  %f' * (args.n_label_type + 1) )
-
-            # to_print = []
-            # for exp, est, prob in zip( example[-1], pi, pv ):
-            #     to_print.append( '%d  %d  %s' % \
-            #             (exp, est, '  '.join( [('%f' % x) for x in prob.tolist()] )) )
-            # print >> valid_predicted, '\n'.join( to_print )
-
-        valid_cost = cost / cnt 
+            for exp, est, prob in zip( example[-1], pi, pv ):
+                to_print.append( '%d  %d  %s' % \
+                        (exp, est, '  '.join( [('%f' % x) for x in prob.tolist()] )) )
+        
+        print >> valid_predicted, '\n'.join( to_print ) 
         valid_predicted.close()
+        valid_cost = cost / cnt
+        logger.info( 'validation set passed' )
 
         #########################################
         ########## go through test set ##########
         #########################################
 
-        cost, cnt = 0, 0
-        for example in test.mini_batch_multi_thread( 
-                            640 if config.feature_choice & (1 << 9) > 0 else 1280, 
-                            False, 1, 1, config.feature_choice ):
+        if args.offical_eval or n_epoch >= config.max_iter / 2:
+            test_file = 'conll2003-result/conll2003-test.predicted'
+            test_predicted = open( test_file, 'wb' )
+            cost, cnt= 0, 0
+            to_print = []
 
-            c, pi, pv = mention_net.eval( example )
+            for example in test.mini_batch_multi_thread( 
+                                2560 if config.feature_choice & (1 << 9) > 0 else 2560, 
+                                False, 1, 1, config.feature_choice ):
 
-            cost += c * example[-1].shape[0]
-            cnt += example[-1].shape[0]
+                c, pi, pv = mention_net.eval( example )
 
-            to_print = numpy.concatenate( 
-                            ( example[-1].astype(numpy.float32).reshape(-1, 1),
-                              pi.astype(numpy.float32).reshape(-1, 1),
-                              pv ),
-                            axis = 1 )
-            numpy.savetxt( test_predicted, to_print, 
-                           fmt = '%d  %d' + '  %f' * (args.n_label_type + 1) )
+                cost += c * example[-1].shape[0]
+                cnt += example[-1].shape[0]
 
-            # to_print = []
-            # for exp, est, prob in zip( example[-1], pi, pv ):
-            #     to_print.append( '%d  %d  %s' % \
-            #             (exp, est, '  '.join( [('%f' % x) for x in prob.tolist()] )) )
-            # print >> test_predicted, '\n'.join( to_print )
-
-        test_cost = cost / cnt 
-        test_predicted.close()
+                for exp, est, prob in zip( example[-1], pi, pv ):
+                    to_print.append( '%d  %d  %s' % \
+                            (exp, est, '  '.join( [('%f' % x) for x in prob.tolist()] )) )
+                
+            print >> test_predicted, '\n'.join( to_print )
+            test_predicted.close()
+            test_cost = cost / cnt
+            logger.info( 'evaluation set passed' )
 
         ###################################################################################
         ########## exhaustively iterate 3 decodding algrithms with 0.x cut-off ############
         ###################################################################################
-        logger.info( 'cost: %f (train), %f (valid), %f (test)', train_cost, valid_cost, test_cost )
+        logger.info( 'cost: %f (train), %f (valid)', train_cost, valid_cost )
+        # logger.info( 'cost: %f (train), %f (valid), %f (test)', train_cost, valid_cost, test_cost )
 
         algo_list = ['highest-first', 'longest-first', 'subsumption-removal']
         best_dev_fb1, best_threshold, best_algorithm = 0, 0.5, 1
 
-        if n_epoch >= config.max_iter / 4:
+        if n_epoch >= config.max_iter / 2:
 
             pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testa' ), 
                                                 'conll2003-result/conll2003-valid.predicted', 
@@ -314,27 +305,6 @@ if __name__ == '__main__':
                         best_dev_fb1, best_threshold, best_algorithm = f1, threshold, algorithm
                         mention_net.config.threshold = best_threshold
                         mention_net.config.algorithm = best_algorithm
-
-            # individual threshold
-            # config = mention_net.config
-            # config.customized_threshold = IndividualThreshold( [best_threshold] * args.n_label_type )
-
-            # for mt in xrange( args.n_label_type ):
-            #     for t in numpy.arange(0.2, 1, 0.1).tolist():
-            #         it = copy.deepcopy( config.customized_threshold )
-            #         it.outer[mt] = t
-
-            #         precision, recall, f1, _ = evaluation( pp, best_threshold, best_algorithm, True,
-            #                                                decoder_callback = it )
-            #         if f1 > best_dev_fb1:
-            #             logger.info( 'f1 changes: %f (global) --> %f (individual)' % (best_dev_fb1, f1) )
-            #             best_dev_fb1 = f1
-
-            #             # update threshold
-            #             config.customized_threshold = copy.deepcopy( it )
-            #             with open( 'conll2003-model/%s.config' % args.model, 'wb' ) as fp:
-            #                 cPickle.dump( config, fp )
-            #             logger.info( 'customized threshold is stored in config' )
 
         ###############################################
         ########## invoke official evaluator ##########
@@ -366,14 +336,17 @@ if __name__ == '__main__':
             _, _, test_fb1, info = evaluation( pp, best_threshold, best_algorithm, True )
             logger.info ( 'validation:\n' + info )
 
-            pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testb' ), 
-                                                'conll2003-result/conll2003-test.predicted', 
-                                                config.n_window ) ]
-            _, _, _, out = evaluation( pp, best_threshold, best_algorithm, True )
-            logger.info ( 'evaluation:\n' + out )
+            if n_epoch >= config.max_iter / 2:
+                pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testb' ), 
+                                                    'conll2003-result/conll2003-test.predicted', 
+                                                    config.n_window ) ]
+                _, _, _, out = evaluation( pp, best_threshold, best_algorithm, True )
+                logger.info ( 'evaluation:\n' + out )
                     
         if test_fb1 > best_test_fb1:
-            best_test_fb1, best_test_info = test_fb1, out
+            if n_epoch >= config.max_iter / 2:
+                 best_test_info = out
+            best_test_fb1 = test_fb1
             mention_net.config.threshold = best_threshold
             mention_net.config.algorithm = best_algorithm
             mention_net.tofile( './conll2003-model/' + args.model )
@@ -387,10 +360,11 @@ if __name__ == '__main__':
         # (out, err) = process.communicate()
         # logger.info( 'test, individual thresholds\n' + out )
 
-        logger.info( 'BEST SO FOR: threshold %f, algorithm %s\n%s' % \
-                        ( mention_net.config.threshold, 
-                          algo_list[mention_net.config.algorithm - 1],
-                          best_test_info ) )
+        if n_epoch >= config.max_iter / 2:
+            logger.info( 'BEST SO FOR: threshold %f, algorithm %s\n%s' % \
+                            ( mention_net.config.threshold, 
+                              algo_list[mention_net.config.algorithm - 1],
+                              best_test_info ) )
 
         ##########################################
         ########## adjust learning rate ##########
