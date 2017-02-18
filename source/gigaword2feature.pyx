@@ -293,12 +293,23 @@ def prepare_mini_batch( batch_generator, batch_buffer, timeout ):
 ################################################################################
 
 class chinese_char_vocab( object ):
-    def __init__( self, filename ):
+    def __init__( self, filename, n_label_type = 0 ):
         self.number = re.compile( r"^(?=[^A-Za-z]+$).*[0-9].*$".encode('utf8') )
 
         with codecs.open( filename, 'rb', 'utf8' ) as fp:
             self.idx2char = [ c.strip() for c in fp.read().strip().split( u'\n' ) ]
         self.char2idx = { c:i for (i,c) in enumerate( self.idx2char ) }
+
+        self.n_char = len(self.char2idx) - n_label_type - 1
+        if n_label_type > 0:
+            for c in self.char2idx.keys():
+                if c != '<unk>' and self.char2idx[c] >= self.n_char:
+                    self.char2idx.pop( c, None )
+
+
+
+    def __len__( self ):
+        return self.n_char
 
 
     def sentence2indices( self, sentence ):
@@ -323,6 +334,7 @@ cdef class vocabulary( object ):
     cdef dict word2fofe
     cdef readonly float alpha
     cdef bint case_sensitive
+    cdef int n_word
     cdef regex* date_pattern_1
     cdef regex* date_pattern_2
     cdef regex* number_pattern
@@ -330,7 +342,8 @@ cdef class vocabulary( object ):
     cdef regex* time_pattern
     cdef regex* contains_digit
 
-    def __cinit__( self, filename, alpha = 0.7, case_sensitive = False ):
+    def __cinit__( self, filename, alpha = 0.7, case_sensitive = False,
+                   n_label_type = 0 ):
         self.word2idx = {}
         self.word2fofe = {}
         self.alpha = alpha
@@ -349,6 +362,18 @@ cdef class vocabulary( object ):
                 self.word2idx[word] = idx
 
         logger.info( '%d words' % len(self.word2idx) )
+
+        # 2nd pass, make room for labels
+        self.n_word = len(self.word2idx) - n_label_type - (2 if self.case_sensitive else 1)
+        if n_label_type > 0:
+            for w in self.word2idx.keys():
+                if w != '<unk>' and w != '<UNK>' \
+                        and self.word2idx[w] >= self.n_word:
+                    self.word2idx.pop(w, None)
+
+
+    def __len__( self ):
+        return self.n_word
 
 
     cdef sentence2indices( self, sentence, vector[int]& numeric ):
@@ -435,12 +460,19 @@ class chinese_word_vocab( vocabulary ):
     """
     The legancy code is strongly-typed. Polymorphism is the fastest fix. 
     """
-    def __init__( self, filename ):
+    def __init__( self, filename, n_label_type = 0 ):
         self.number = re.compile( r"^(?=[^A-Za-z]+$).*[0-9].*$".encode('utf8') )
 
         with codecs.open( filename, 'rb', 'utf8' ) as fp:
             self.idx2word = [ w.strip() for w in fp.read().strip().split( u'\n' ) ]
         self.word2idx = { w:i for (i,w) in enumerate( self.idx2word ) }
+
+        # 2nd pass, make room for labels
+        self.n_word = len(self.word2idx) - n_label_type - 1
+        if n_label_type > 0:
+            for w in self.word2idx.keys():
+                if w != '<unk>' and self.word2idx[w] >= self.n_word:
+                    self.word2idx.pop(w, None)
 
 
 
@@ -474,7 +506,8 @@ cdef class processed_sentence:
     cdef readonly vector[vector[int]] right_context_idx
     cdef readonly vector[vector[float]] right_context_data
 
-    def __init__( self, sentence, numericizer, a = 0.7, language = 'eng' ):
+    def __init__( self, sentence, numericizer, 
+                  a = 0.7, language = 'eng', label1st = None ):
         """
         Parameters
         ----------
@@ -482,6 +515,10 @@ cdef class processed_sentence:
             numericizer : vocabulary
             a : float
                 word-level forgetting factor
+            language : eng
+                either 'eng', 'cmn' or 'spa'
+            label1st : list
+                labels from 1st pass
         """
 
         cdef vocabulary vocab
@@ -504,9 +541,29 @@ cdef class processed_sentence:
         cdef int idx
         cdef int n = self.numeric.size()
 
+        # used to record the represnetation up to the last
+        cdef bint is2ndPass = (label1st is not None)
+        cdef ordered_map[int,int] boe
+        cdef ordered_map[int,int] eoe
+        cdef ordered_map[int,float] left_context_2nd
+        cdef ordered_map[int,float] right_context_2nd
+        cdef int n_word = len(numericizer)
+
+        if is2ndPass:
+            boe = dict(zip(label1st[0], label1st[2]))
+            eoe = dict(zip(label1st[1], label1st[2]))
+
         with nogil: 
             for i in range( n ):
-                idx = self.numeric[i]
+                if boe.find(i) != boe.end():
+                    left_context_2nd = left_context
+
+                if eoe.find(i + 1) == eoe.end():
+                    idx = self.numeric[i]
+                else:
+                    idx = n_word + eoe[i + 1]
+                    left_context = left_context_2nd
+
                 if i == 0:
                     left_context[idx] = 1
                 else:
@@ -530,7 +587,15 @@ cdef class processed_sentence:
                 self.left_context_data.push_back( data_buffer )
 
             for i in reversed( range( n ) ):
-                idx = self.numeric[i]
+                if eoe.find(i + 1) != eoe.end():
+                    right_context_2nd = right_context
+
+                if boe.find(i) == boe.end():
+                    idx = self.numeric[i]
+                else:
+                    idx = n_word + boe[i]
+                    right_context = right_context_2nd
+
                 if i == n - 1:
                     right_context[idx] = 1
                 else:
@@ -556,10 +621,6 @@ cdef class processed_sentence:
             reverse( self.right_context_idx.begin(), self.right_context_idx.end() )
             reverse( self.right_context_data.begin(), self.right_context_data.end() )
 
-        # print self.left_context_idx
-        # print self.left_context_data
-        # print self.right_context_idx
-        # print self.right_context_data
 
 
     cdef insert_left_fofe( self, int pos, int row_id, 
@@ -659,7 +720,8 @@ class batch_constructor:
     def __init__( self, parser, 
                   numericizer1, numericizer2,
                   gazetteer = None, window = 7, alpha = 0.7, 
-                  n_label_type = 4, language = 'eng' ):
+                  n_label_type = 4, language = 'eng',
+                  is2ndPass = False ):
         """
         Parameters
         ----------
@@ -681,6 +743,12 @@ class batch_constructor:
             n_label_type : int
                 number of mention types excluding O. For example, CoNLL2003 has 4 mention types,
                 namely, PER, ORG, LOC and MISC.
+
+            language : str
+                either 'eng', 'cmn' or 'spa'
+
+            is2ndPass : bool
+                enable 2nd pass if true
         """
         assert language in { 'eng', 'cmn', 'spa' }
         self.language = language
@@ -697,6 +765,8 @@ class batch_constructor:
         self.positive = []
         self.overlap = []
         self.disjoint = []
+
+        self.is2ndPass = is2ndPass
 
         # luckily that 'batch_constructor' is not strongly-typed
         # it is OK that these two data members hold garbage value when parsing Chinese
@@ -752,12 +822,15 @@ class batch_constructor:
 
                     self.example.append( example( len(self.sentence1), 
                                                   i, j, label ,gazetteer_match) )
-                   
+            
+            label1st = (ner_begin, ner_end, ner_label) if self.is2ndPass else None
             if language != 'cmn': 
                 self.sentence1.append( processed_sentence( sentence, numericizer1, 
-                                                           alpha, language ) )
+                                                           alpha, language,
+                                                           label1st ) )
                 self.sentence2.append( processed_sentence( sentence, numericizer2, 
-                                                           alpha, language ) )
+                                                           alpha, language,
+                                                           label1st ) )
             else:
                 char_sequence, word_sequence = [], []
                 for token in sentence:
@@ -765,9 +838,11 @@ class batch_constructor:
                     char_sequence.append( c )
                     word_sequence.append( w )
                 self.sentence1.append( processed_sentence( char_sequence, numericizer1,
-                                                           alpha, language ) )
+                                                           alpha, language,
+                                                           label1st ) )
                 self.sentence2.append( processed_sentence( word_sequence, numericizer2,
-                                                           alpha, language ) )
+                                                           alpha, language,
+                                                           label1st ) )
 
         self.positive = numpy.asarray( self.positive, dtype = numpy.int32 )
         self.overlap = numpy.asarray( self.overlap, dtype = numpy.int32 )

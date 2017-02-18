@@ -3,7 +3,7 @@
 # Instead of taking command line arguments, I put predefined hyper parameters here
 # The hyper parameters should be fine-tuned in a non-cross-validation setting.
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 set -e
 this_script=`which $0`
@@ -64,7 +64,8 @@ do
 		--dropout \
 		--char_alpha 0.8 \
 		--word_alpha 0.5 \
-		--model "split-${i}"
+		--model "split-${i}" \
+		--buffer_dir ${dir}
 done
 
 
@@ -80,4 +81,6 @@ ${this_dir}/CoNLL2003eval.py \
 	--n_window `head -1 ${dir}/predicted | cut -d' ' -f3` \
 	${dir}/eng.testb \
 	<(awk "NR > 1" ${dir}/predicted) | \
-${this_dir}/conlleval
+${this_dir}/conlleval | tee ${dir}/result
+
+awk 'NR == 2' ${dir}/result | rev | cut -d' ' -f1 | rev

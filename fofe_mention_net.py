@@ -80,6 +80,7 @@ class mention_config( object ):
             self.initialize_method = 'uniform'
             self.language = 'eng'
             self.average = False
+            self.is_2nd_pass = False
         else:
             self.word_embedding = args.word_embedding
             self.data_path = args.data_path
@@ -107,6 +108,7 @@ class mention_config( object ):
             self.initialize_method = args.initialize_method
             self.language = args.language
             self.average = args.average
+            self.is_2nd_pass = args.is_2nd_pass
         # these parameters are not decided by the input to the program
         # I put some placeholders here; they will be eventually modified
         self.algorithm = 1          # highest first
@@ -218,6 +220,22 @@ class fofe_mention_net( object ):
             projection2 = numpy.random.uniform( -1, 1, 
                             (self.n_word2, n_word_embedding2) ).astype( numpy.float32 )
             logger.info( 'embedding is randomly initialized' )
+
+        if config.is_2nd_pass:
+            logger.info( 'In 2nd pass, substitute the last few entries with label types.' )
+            projection1[-1 - n_label_type: -1, :] = \
+                            numpy.random.uniform( 
+                                    projection1.min(), projection1.max(),
+                                    (n_label_type, n_word_embedding1) 
+                            ).astype( numpy.float32 )
+            sub = numpy.random.uniform( 
+                                projection2.min(), projection2.max(),
+                                (n_label_type, n_word_embedding2) 
+                        ).astype( numpy.float32 )
+            if self.config.language == 'cmn':
+                projection2[-1 - n_label_type: -1, :] = sub
+            else:
+                projection2[-2 - n_label_type: -2, :] = sub
 
         # dimension of x in the HOPE paper
         hope_in = 0

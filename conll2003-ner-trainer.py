@@ -77,6 +77,11 @@ if __name__ == '__main__':
     parser.add_argument( '--model', type = str, default = 'hopeless' )
     parser.add_argument( '--offical_eval', action = 'store_true', default = False,
                          help = 'invoke official evaluator when true' )
+    parser.add_argument( '--buffer_dir', type = str, default = None,
+                         help = 'where to write conll2003-{valid,test}.predicted' )
+    # experimental
+    parser.add_argument( '--is_2nd_pass', action = 'store_true', default = False,
+                         help = 'run 2nd pass training when true' )
 
     # TODO
     # these hyper parameters are from kbp-ed-trainer
@@ -101,6 +106,13 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     logger.info( str(args) + '\n' )
+
+    ################################################################################
+
+    if args.is_2nd_pass:
+        logger.info( 'user-input feature-choice was %d' % args.feature_choice )
+        args.feature_choice &= 2038
+        logger.info( 'feature-choice now is %d' % args.feature_choice )
 
     ################################################################################
 
@@ -135,10 +147,13 @@ if __name__ == '__main__':
     ########################################################################
 
     # there are 2 sets of vocabulary, case-insensitive and case sensitive
+    nt = config.n_label_type if config.is_2nd_pass else 0
     numericizer1 = vocabulary( config.word_embedding + '-case-insensitive.wordlist', 
-                               config.char_alpha, False )
+                               config.char_alpha, False,
+                               n_label_type = nt )
     numericizer2 = vocabulary( config.word_embedding + '-case-sensitive.wordlist', 
-                               config.char_alpha, True )
+                               config.char_alpha, True,
+                               n_label_type = nt )
 
     conll2003_gazetteer = gazetteer( args.data_path + '/ner-lst' )
 
@@ -146,21 +161,24 @@ if __name__ == '__main__':
                                numericizer1, numericizer2, 
                                gazetteer = conll2003_gazetteer, 
                                alpha = config.word_alpha, 
-                               window = config.n_window )
+                               window = config.n_window,
+                               is2ndPass = args.is_2nd_pass )
     logger.info( 'train: ' + str(train) )
 
     valid = batch_constructor( CoNLL2003( args.data_path + '/eng.testa' ), 
                                numericizer1, numericizer2, 
                                gazetteer = conll2003_gazetteer, 
                                alpha = config.word_alpha, 
-                               window = config.n_window )
+                               window = config.n_window,
+                               is2ndPass = args.is_2nd_pass )
     logger.info( 'valid: ' + str(valid) )
 
     test  = batch_constructor( CoNLL2003( args.data_path + '/eng.testb' ), 
                                numericizer1, numericizer2, 
                                gazetteer = conll2003_gazetteer, 
                                alpha = config.word_alpha, 
-                               window = config.n_window )
+                               window = config.n_window,
+                               is2ndPass = args.is_2nd_pass )
     logger.info( 'test: ' + str(test) )
 
     logger.info( 'data set loaded' )
@@ -229,7 +247,10 @@ if __name__ == '__main__':
         ########## go through validation set ##########
         ###############################################
 
-        valid_file = 'conll2003-result/conll2003-valid.predicted'
+        if args.buffer_dir is None:
+            valid_file = 'conll2003-result/conll2003-valid.predicted'
+        else:
+            valid_file = os.path.join( args.buffer_dir, 'conll2003-valid.predicted' )
         valid_predicted = open( valid_file, 'wb' )
         cost, cnt = 0, 0
         to_print = [] 
@@ -256,8 +277,13 @@ if __name__ == '__main__':
         ########## go through test set ##########
         #########################################
 
-        if args.offical_eval or n_epoch >= config.max_iter / 2:
-            test_file = 'conll2003-result/conll2003-test.predicted'
+        decode_test = (n_epoch >= config.max_iter / 2 or n_epoch == 0)
+
+        if args.offical_eval or decode_test:
+            if args.buffer_dir is None:
+                test_file = 'conll2003-result/conll2003-test.predicted'
+            else:
+                test_file = os.path.join( args.buffer_dir, 'conll2003-test.predicted' )
             test_predicted = open( test_file, 'wb' )
             cost, cnt= 0, 0
             to_print = []
@@ -289,10 +315,10 @@ if __name__ == '__main__':
         algo_list = ['highest-first', 'longest-first', 'subsumption-removal']
         best_dev_fb1, best_threshold, best_algorithm = 0, 0.5, 1
 
-        if n_epoch >= config.max_iter / 2:
+        if decode_test:
 
             pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testa' ), 
-                                                'conll2003-result/conll2003-valid.predicted', 
+                                                valid_file, 
                                                 config.n_window ) ]
 
             for algorithm, name in zip([1, 2, 3], algo_list):
@@ -314,8 +340,7 @@ if __name__ == '__main__':
             cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d --config=%s ' \
                             % ( best_threshold, best_algorithm, config.n_window, 
                                 'conll2003-model/%s.config' % args.model ) ) + \
-                  ('%s/eng.testa conll2003-result/conll2003-valid.predicted | conlleval' \
-                            % config.data_path)
+                  ('%s/eng.testa %s | conlleval' % (config.data_path, valid_file) )
             process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
             (out, err) = process.communicate()
             exit_code = process.wait()
@@ -323,28 +348,27 @@ if __name__ == '__main__':
 
             cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d ' \
                             % ( best_threshold, best_algorithm, config.n_window ) ) + \
-                  ('%s/eng.testb conll2003-result/conll2003-test.predicted | conlleval' \
-                            % config.data_path)
+                  ('%s/eng.testb %s | conlleval' % (config.data_path, test_file) )
             process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
             (out, err) = process.communicate()
             logger.info( 'test, global threshold\n' + out )
             test_fb1 = float(out.split('\n')[1].split()[-1])
         else:
             pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testa' ), 
-                                                'conll2003-result/conll2003-valid.predicted', 
+                                                valid_file, 
                                                 config.n_window ) ]
             _, _, test_fb1, info = evaluation( pp, best_threshold, best_algorithm, True )
             logger.info ( 'validation:\n' + info )
 
-            if n_epoch >= config.max_iter / 2:
+            if decode_test:
                 pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testb' ), 
-                                                    'conll2003-result/conll2003-test.predicted', 
+                                                    test_file, 
                                                     config.n_window ) ]
                 _, _, _, out = evaluation( pp, best_threshold, best_algorithm, True )
                 logger.info ( 'evaluation:\n' + out )
                     
         if test_fb1 > best_test_fb1:
-            if n_epoch >= config.max_iter / 2:
+            if decode_test:
                  best_test_info = out
             best_test_fb1 = test_fb1
             mention_net.config.threshold = best_threshold
@@ -360,7 +384,7 @@ if __name__ == '__main__':
         # (out, err) = process.communicate()
         # logger.info( 'test, individual thresholds\n' + out )
 
-        if n_epoch >= config.max_iter / 2:
+        if decode_test:
             logger.info( 'BEST SO FOR: threshold %f, algorithm %s\n%s' % \
                             ( mention_net.config.threshold, 
                               algo_list[mention_net.config.algorithm - 1],
