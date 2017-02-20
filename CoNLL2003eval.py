@@ -32,7 +32,7 @@ O       unknown
 """
 
 
-import numpy, argparse, logging, cPickle #, pandas
+import numpy, argparse, logging, cPickle, sys #, pandas
 from gigaword2feature import *
 
 logger = logging.getLogger()
@@ -74,7 +74,7 @@ if __name__ == '__main__':
                            trainer_output, n_window, reinterpret )
 
     evaluation( pp, threshold, algorithm, 
-                surpress_output = False, 
+                conll2003out = sys.stdout, 
                 sentence_iterator = SentenceIterator( ner_file ),
                 decoder_callback = customized_threshold )
 

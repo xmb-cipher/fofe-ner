@@ -38,6 +38,8 @@ if __name__ == '__main__':
                          level = logging.INFO )
 
     parser = argparse.ArgumentParser()
+    parser.add_argument( 'model', type = str,
+                         help = 'basename of the model, including model & model.{config,meta}' )
     parser.add_argument( 'input', type = str, 
                          help = 'input file, one tokenized sentence per line' )
     parser.add_argument( 'output', type = str,
@@ -51,9 +53,10 @@ if __name__ == '__main__':
 
     ########## load model configuration ##########
 
-    config_path = os.path.join( os.path.dirname(__file__), 
-                                'conll2003-model', 
-                                'hopeless.config' )
+    # config_path = os.path.join( os.path.dirname(__file__), 
+    #                             'conll2003-model', 
+    #                             'hopeless.config' )
+    config_path = '%s.config' % args.model
     with open( config_path, 'rb' ) as fp:
         config = cPickle.load( fp )
     logger.info( config.__dict__ )
@@ -61,9 +64,10 @@ if __name__ == '__main__':
 
     ########## load model parameters ##########
 
-    param_path = os.path.join( os.path.dirname(__file__), 
-                               'conll2003-model',
-                               'hopeless' )
+    # param_path = os.path.join( os.path.dirname(__file__), 
+    #                            'conll2003-model',
+    #                            'hopeless' )
+    param_path = args.model
     mention_net = fofe_mention_net( config )
     mention_net.fromfile( param_path )
     logger.info( 'model loaded' )

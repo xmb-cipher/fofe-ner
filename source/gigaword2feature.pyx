@@ -1559,7 +1559,7 @@ def decode( sentence, estimate, table, threshold, algorithm, callback = None ):
 
 
 def evaluation( prediction_parser, threshold, algorithm, 
-                surpress_output = False, analysis = None, sentence_iterator = None,
+                conll2003out = None, analysis = None, sentence_iterator = None,
                 n_label_type = 4, decoder_callback = None ):
     # analysis = open( trainer_output.split('.')[0] + '.error', 'wb' )
 
@@ -1620,10 +1620,10 @@ def evaluation( prediction_parser, threshold, algorithm,
                 for i in xrange(b, e):
                     tag[i] = x
             for o, t in zip( original, tag ):
-                if not surpress_output:
-                    print o, t
-            if not surpress_output:
-                print
+                if conll2003out:
+                    print >> conll2003out, o, t
+            if conll2003out:
+                print >> conll2003out
 
     for x in xrange( len(true_positive) ):
         if true_positive[x] != 0:

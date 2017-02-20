@@ -55,10 +55,10 @@ do
 		${dir}/split-${i} \
 		--layer_size 512,512,512 \
 		--n_batch_size 512 \
-		--learning_rate 0.128 \
+		--learning_rate 0.1024 \
 		--momentum 0.9 \
-		--max_iter 64 \
-		--feature_choice 639 \
+		--max_iter 128 \
+		--feature_choice 767 \
 		--overlap_rate 0.36 \
 		--disjoint_rate 0.09 \
 		--dropout \
