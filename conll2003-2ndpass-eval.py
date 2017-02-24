@@ -1,6 +1,7 @@
 #!/eecs/research/asr/mingbin/python-workspace/hopeless/bin/python
 
 import numpy, argparse, logging, time, cPickle, codecs, os, getpass, sys
+from subprocess import Popen, PIPE, call
 
 logger = logging.getLogger( __name__ )
 
@@ -19,8 +20,10 @@ if __name__ == '__main__':
                          help = 'CoNLL2003 evaluation set' )
     parser.add_argument( '--buf_dir', type = str, default = None,
                          help = 'writable directory buffering intermediate results' )
-    parser.add_argument( '--nfold', action = 'store_true', default = False,
-                         help = 'load 5 models if set' )
+    parser.add_argument( '--nfold1st', action = 'store_true', default = False,
+                         help = 'load 5 models for 1st pass if set' )
+    parser.add_argument( '--nfold2nd', action = 'store_true', default = False,
+                         help = 'load 5 models for 2nd pass if set' )
 
     args = parser.parse_args()
     logger.info( str(args) + '\n' )
@@ -48,56 +51,80 @@ if __name__ == '__main__':
     ########## compute 1st-past result
     ################################################################################
 
-    with open( '%s.config' % args.model1st, 'rb' ) as fp:
-        config1 = cPickle.load( fp )
-    logger.info( config1.__dict__ )
-    logger.info( 'config1st loaded' )
+    if args.nfold1st:
+        model1st = [ ('%s-%d' % (args.model1st, i)) for i in xrange(5) ]
+        logger.info( 'The evaluator will load 5 models' )
+    else:
+        model1st = [ args.model1st ]
+        logger.info( 'The evaluator will load a single model' )
+    algo2freq, threshold1, prob1 = { 1: 0, 2: 0, 3: 0 }, 0, None
 
-    ################################################################################
+    for model in model1st:
 
-    # TODO, integrate wordlist and model basename
-    numericizer1 = vocabulary( os.path.join( os.path.dirname(__file__),
-                                             'conll2003-model',
-                                             'reuters256-case-insensitive.wordlist' ),
-                               config1.char_alpha, False )
-    numericizer2 = vocabulary( os.path.join( os.path.dirname(__file__),
-                                             'conll2003-model',
-                                             'reuters256-case-sensitive.wordlist' ),
-                               config1.char_alpha, True )
+        with open( '%s.config' % model, 'rb' ) as fp:
+            config1 = cPickle.load( fp )
+        logger.info( config1.__dict__ )
+        logger.info( 'config1st loaded' )
 
-    logger.info( 'vocabulary loaded' )
+        algo2freq[config1.algorithm] += 1
+        threshold1 += config1.threshold / len(model1st)
 
-    ################################################################################
+        ################################################################################
 
-    test  = batch_constructor( CoNLL2003( args.testb ), 
-                               numericizer1, numericizer2, 
-                               gazetteer = conll2003_gazetteer, 
-                               alpha = config1.word_alpha, 
-                               window = config1.n_window )
-    logger.info( 'test: ' + str(test) )
-    logger.info( 'data set loaded' )
+        # TODO, integrate wordlist and model basename
+        numericizer1 = vocabulary( os.path.join( os.path.dirname(__file__),
+                                                 'conll2003-model',
+                                                 'reuters256-case-insensitive.wordlist' ),
+                                   config1.char_alpha, False )
+        numericizer2 = vocabulary( os.path.join( os.path.dirname(__file__),
+                                                 'conll2003-model',
+                                                 'reuters256-case-sensitive.wordlist' ),
+                                   config1.char_alpha, True )
+        logger.info( 'vocabulary loaded' )
 
-    ################################################################################
+        ################################################################################
 
-    mention_net = fofe_mention_net( config1 )
-    mention_net.fromfile( args.model1st )
-    logger.info( 'model loaded' )
+        test  = batch_constructor( CoNLL2003( args.testb ), 
+                                   numericizer1, numericizer2, 
+                                   gazetteer = conll2003_gazetteer, 
+                                   alpha = config1.word_alpha, 
+                                   window = config1.n_window )
+        logger.info( 'test: ' + str(test) )
+        logger.info( 'data set loaded' )
 
-    ################################################################################
+        ################################################################################
 
-    print1, predicted1st = [], os.path.join( buf_dir, 'predict1st' )
-    for example in test.mini_batch_multi_thread( 
-                        2560 if config1.feature_choice & (1 << 9) > 0 else 2560, 
-                        False, 1, 1, config1.feature_choice ):
+        mention_net = fofe_mention_net( config1 )
+        mention_net.fromfile( model )
+        logger.info( 'model loaded' )
 
-        _, pi, pv = mention_net.eval( example )
-        print1.append( numpy.concatenate( 
-                           ( example[-1].astype(numpy.float32).reshape(-1, 1),
-                             pi.astype(numpy.float32).reshape(-1, 1),
-                             pv ), axis = 1 ) )
-        
-    print1 = numpy.concatenate( print1, axis = 0 )
-    numpy.savetxt( predicted1st, print1, 
+        ################################################################################
+
+        print1 = []
+        for example in test.mini_batch_multi_thread( 
+                            2560 if config1.feature_choice & (1 << 9) > 0 else 2560, 
+                            False, 1, 1, config1.feature_choice ):
+
+            _, pi, pv = mention_net.eval( example )
+            print1.append( numpy.concatenate( 
+                               ( example[-1].astype(numpy.float32).reshape(-1, 1),
+                                 pi.astype(numpy.float32).reshape(-1, 1),
+                                 pv ), axis = 1 ) )
+
+        del mention_net
+        print1 = numpy.concatenate( print1, axis = 0 )
+        logger.info( 'probability evaluated for %s' % model )
+
+        if prob1 is None:
+            prob1 = print1
+        else:
+            prob1 += print1
+
+    if len(model1st) > 1:
+        prob1 /= len(model1st)
+        prob1[:,1:2] = prob1[:,2:].argmax( axis = 1 ).reshape(-1, 1)
+    predicted1st = os.path.join( buf_dir, 'predict1st' )
+    numpy.savetxt( predicted1st, prob1, 
                    fmt = '%d  %d' + '  %f' * (config1.n_label_type + 1) )
 
     logger.info( 'evaluation set passed first time' )
@@ -106,71 +133,105 @@ if __name__ == '__main__':
 
     output1st = os.path.join(buf_dir, 'output1st')
     with open( output1st, 'wb' ) as out1st:
-        _, _, _, info = evaluation( pp, config1.threshold, config1.algorithm,
+        algorithm1 = sorted([(y, x) for (x, y) in algo2freq.items()], reverse = True)[0][1]     
+        _, _, _, info = evaluation( pp, threshold1, algorithm1,
                                     conll2003out = out1st,
                                     sentence_iterator = SentenceIterator( args.testb ) )
     logger.info( '\n' + info )
-    logger.info( 'first-round output generated' )
-    del mention_net
+
+    cmd = 'cat %s | conlleval' % output1st
+    process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
+    (out, err) = process.communicate()
+    exit_code = process.wait()
+    logger.info( '\x1B[32mofficial\n%s\x1B[0m' % out )
+
+    logger.info( 'first-round output generated (threshold %d, algorithm %d)' \
+                    % (threshold1, algorithm1) )
 
     ################################################################################
     ########## compute 2nd-pass result
     ################################################################################
 
-    with open( '%s.config' % args.model2nd, 'rb' ) as fp:
-        config2 = cPickle.load( fp )
-    config2.is_2nd_pass = True
-    assert config2.n_window == config1.n_window, 'inconsisitent window size'
-    logger.info( config2.__dict__ )
-    logger.info( 'config2nd loaded' )
+    if args.nfold2nd:
+        model2nd = [ ('%s-%d' % (args.model2nd, i)) for i in xrange(5) ]
+        logger.info( 'The evaluator will load 5 models' )
+    else:
+        model2nd = [ args.model2nd ]
+        logger.info( 'The evaluator will load a single model' )
+    algo2freq, threshold2, prob2 = { 1: 0, 2: 0, 3: 0 }, 0, None
 
-    ################################################################################
+    for model in model2nd:
 
-    # TODO, integrate wordlist and model basename
-    numericizer1 = vocabulary( os.path.join( os.path.dirname(__file__),
-                                             'conll2003-model',
-                                             'reuters256-case-insensitive.wordlist' ),
-                               config2.char_alpha, False,
-                               n_label_type = config2.n_label_type )
-    numericizer2 = vocabulary( os.path.join( os.path.dirname(__file__),
-                                             'conll2003-model',
-                                             'reuters256-case-sensitive.wordlist' ),
-                               config2.char_alpha, True,
-                               n_label_type = config2.n_label_type )
-    logger.info( 'vocabulary loaded' )
+        with open( '%s.config' % model, 'rb' ) as fp:
+            config2 = cPickle.load( fp )
+        config2.is_2nd_pass = True
+        assert config2.n_window == config1.n_window, 'inconsisitent window size'
+        logger.info( config2.__dict__ )
+        logger.info( 'config2nd loaded' )
 
-    ################################################################################
+        algo2freq[config2.algorithm] += 1
+        threshold2 += config2.threshold / len(model2nd)
 
-    test  = batch_constructor( CoNLL2003( output1st ), 
-                               numericizer1, numericizer2, 
-                               gazetteer = conll2003_gazetteer, 
-                               alpha = config2.word_alpha, 
-                               window = config2.n_window,
-                               is2ndPass = True )
-    logger.info( 'test: ' + str(test) )
-    logger.info( 'data set loaded' )
+        ################################################################################
 
-    ################################################################################
+        # TODO, integrate wordlist and model basename
+        numericizer1 = vocabulary( os.path.join( os.path.dirname(__file__),
+                                                 'conll2003-model',
+                                                 'reuters256-case-insensitive.wordlist' ),
+                                   config2.char_alpha, False,
+                                   n_label_type = config2.n_label_type )
+        numericizer2 = vocabulary( os.path.join( os.path.dirname(__file__),
+                                                 'conll2003-model',
+                                                 'reuters256-case-sensitive.wordlist' ),
+                                   config2.char_alpha, True,
+                                   n_label_type = config2.n_label_type )
+        logger.info( 'vocabulary loaded' )
 
-    mention_net = fofe_mention_net( config2 )
-    mention_net.fromfile( args.model2nd )
-    logger.info( 'model loaded' )
+        ################################################################################
 
-    ################################################################################
+        test  = batch_constructor( CoNLL2003( output1st ), 
+                                   numericizer1, numericizer2, 
+                                   gazetteer = conll2003_gazetteer, 
+                                   alpha = config2.word_alpha, 
+                                   window = config2.n_window,
+                                   is2ndPass = True )
+        logger.info( 'test: ' + str(test) )
+        logger.info( 'data set loaded' )
 
-    print2, predicted2nd = [], os.path.join( buf_dir, 'predict2nd' )
-    for example in test.mini_batch_multi_thread( 
-                        2560 if config1.feature_choice & (1 << 9) > 0 else 2560, 
-                        False, 1, 1, config1.feature_choice ):
+        ################################################################################
 
-        _, pi, pv = mention_net.eval( example )
-        print2.append( numpy.concatenate( 
-                           ( example[-1].astype(numpy.float32).reshape(-1, 1),
-                             pi.astype(numpy.float32).reshape(-1, 1),
-                             pv ), axis = 1 ) )
+        mention_net = fofe_mention_net( config2 )
+        mention_net.fromfile( model )
+        logger.info( 'model loaded' )
+
+        ################################################################################
+
+        print2 = []
+        for example in test.mini_batch_multi_thread( 
+                            2560 if config1.feature_choice & (1 << 9) > 0 else 2560, 
+                            False, 1, 1, config1.feature_choice ):
+
+            _, pi, pv = mention_net.eval( example )
+            print2.append( numpy.concatenate( 
+                               ( example[-1].astype(numpy.float32).reshape(-1, 1),
+                                 pi.astype(numpy.float32).reshape(-1, 1),
+                                 pv ), axis = 1 ) )
         
-    print2 = numpy.concatenate( print2, axis = 0 )
-    numpy.savetxt( predicted2nd, print2, 
+        del mention_net
+        print2 = numpy.concatenate( print2, axis = 0 )
+        logger.info( 'probability evaluated for %s' % model )
+
+        if prob2 is None:
+            prob2 = print2
+        else:
+            prob2 += print2
+
+    if len(model2nd) > 1:
+        prob2 /= len(model2nd)
+        prob2[:,1:2] = prob2[:,2:].argmax( axis = 1 ).reshape(-1, 1)
+
+    predicted2nd = os.path.join( buf_dir, 'predict2nd' )
+    numpy.savetxt( predicted2nd, prob2, 
                    fmt = '%d  %d' + '  %f' * (config2.n_label_type + 1) )
 
     logger.info( 'evaluation set passed second time' )
@@ -179,32 +240,45 @@ if __name__ == '__main__':
 
     output2nd = os.path.join(buf_dir, 'output2nd')
     with open( output2nd, 'wb' ) as out2nd:
-        _, _, _, info = evaluation( pp, config2.threshold, config2.algorithm,
+        algorithm2 = sorted([(y, x) for (x, y) in algo2freq.items()], reverse = True)[0][1]
+        _, _, _, info = evaluation( pp, threshold2, algorithm2,
                                     conll2003out = out2nd,
                                     sentence_iterator = SentenceIterator( args.testb ) )
-    logger.info( '\n' + info )
+    logger.info( 'non-official\n' + info )
+
+    cmd = 'cat %s | conlleval' % output2nd
+    process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
+    (out, err) = process.communicate()
+    exit_code = process.wait()
+    logger.info( 'official\n' + out )
+
     logger.info( 'second-round output generated' )
-    del mention_net
 
     ################################################################################
     ########## combine 1st-pass and 2nd-pass result in terms of raw probability
     ################################################################################
 
-    print3 = print2.copy()
-    print3[:,2:] += print2[:,2:]
-    print3[:,2:] /= 2
-    threshold = (config1.threshold + config2.threshold) / 2
+    prob3 = (prob1 + prob2) / 2
+    prob3[:,1:2] = prob3[:,2:].argmax( axis = 1 ).reshape(-1, 1)
+    threshold = (threshold1 + threshold2) / 2
 
     predicted3rd = os.path.join( buf_dir, 'predict3rd' )
-    numpy.savetxt( predicted3rd, print3, 
+    numpy.savetxt( predicted3rd, prob3, 
                    fmt = '%d  %d' + '  %f' * (config2.n_label_type + 1) )
 
     pp = PredictionParser( SampleGenerator( args.testb ), predicted3rd, config2.n_window )
 
     output3rd = os.path.join(buf_dir, 'output3rd')
-    with open( output2nd, 'wb' ) as out3rd:
+    with open( output3rd, 'wb' ) as out3rd:
         _, _, _, info = evaluation( pp, threshold, config2.algorithm,
                                     conll2003out = out3rd,
                                     sentence_iterator = SentenceIterator( args.testb ) )
-    logger.info( '\n' + info )
+    logger.info( 'non-official\n' + info )
+        
+    cmd = 'cat %s | conlleval' % output3rd
+    process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
+    (out, err) = process.communicate()
+    exit_code = process.wait()
+    logger.info( '\x1B[32mofficial\n%s\x1B[0m' % out )
+
     logger.info( '1st-pass and 2nd-pass combined at probability level' )

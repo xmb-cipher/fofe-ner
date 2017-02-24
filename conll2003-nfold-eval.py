@@ -13,6 +13,7 @@ if __name__ == '__main__':
                           help = 'path to eng.testb of conll2003' )
     parser.add_argument( 'combined_out', type = str,
                          help = 'average probability' )
+    parser.add_argument( '--is_2nd_pass', action = 'store_true', default = False )
 
     args = parser.parse_args()
     logger.info( str(args) + '\n' ) 
@@ -41,14 +42,17 @@ if __name__ == '__main__':
 
         ########## load vocabulary ##########
 
+        nt = config.n_label_type if config.is_2nd_pass else 0
         numericizer1 = vocabulary( os.path.join( os.path.dirname(__file__),
                                                  'conll2003-model',
                                                  'reuters256-case-insensitive.wordlist' ),
-                                   config.char_alpha, False )
+                                   config.char_alpha, False,
+                                   n_label_type = nt )
         numericizer2 = vocabulary( os.path.join( os.path.dirname(__file__),
                                                  'conll2003-model',
                                                  'reuters256-case-sensitive.wordlist' ),
-                                   config.char_alpha, True )
+                                   config.char_alpha, True,
+                                   n_label_type = nt )
         logger.info( 'vocabulary loaded' )
 
         if i == 0:
@@ -71,7 +75,8 @@ if __name__ == '__main__':
                                   numericizer1, numericizer2, 
                                   gazetteer = conll2003_gazetteer, 
                                   alpha = config.word_alpha, 
-                                  window = config.n_window )
+                                  window = config.n_window,
+                                  is2ndPass = args.is_2nd_pass )
         logger.info( 'testb loaded' )
 
         ########## compute probability ##########

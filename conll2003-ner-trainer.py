@@ -82,6 +82,9 @@ if __name__ == '__main__':
     # experimental
     parser.add_argument( '--is_2nd_pass', action = 'store_true', default = False,
                          help = 'run 2nd pass training when true' )
+    parser.add_argument( '--gpu_fraction', type = float, default = 0.96 )
+    parser.add_argument( '--l1', type = float, default = 0 )
+    parser.add_argument( '--l2', type = float, default = 0 )
 
     # TODO
     # these hyper parameters are from kbp-ed-trainer
@@ -141,7 +144,7 @@ if __name__ == '__main__':
 
     ################################################################################
 
-    mention_net = fofe_mention_net( config )
+    mention_net = fofe_mention_net( config, args.gpu_fraction )
     mention_net.tofile( './conll2003-model/' + args.model )
 
     ########################################################################
@@ -243,6 +246,9 @@ if __name__ == '__main__':
         train_cost = cost / cnt 
         logger.info( 'training set iterated, %f' % train_cost )
 
+        if 0 < n_epoch < 10:
+            continue
+
         ###############################################
         ########## go through validation set ##########
         ###############################################
@@ -256,7 +262,7 @@ if __name__ == '__main__':
         to_print = [] 
 
         for example in valid.mini_batch_multi_thread( 
-                            2560 if config.feature_choice & (1 << 9) > 0 else 5120, 
+                            512 if config.feature_choice & (1 << 9) > 0 else 1024, 
                             False, 1, 1, config.feature_choice ):
 
             c, pi, pv = mention_net.eval( example )
@@ -289,7 +295,7 @@ if __name__ == '__main__':
             to_print = []
 
             for example in test.mini_batch_multi_thread( 
-                                2560 if config.feature_choice & (1 << 9) > 0 else 2560, 
+                                512 if config.feature_choice & (1 << 9) > 0 else 1024, 
                                 False, 1, 1, config.feature_choice ):
 
                 c, pi, pv = mention_net.eval( example )

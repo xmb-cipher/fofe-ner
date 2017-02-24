@@ -12,7 +12,7 @@ best_dir=${this_dir}/conll2003-model/best-model
 tmp_dir=`mktemp -d`
 trap "rm -rf ${tmp_dir}" EXIT
 
-best_f1=0
+best_f1=${best_f1:-0}
 
 for (( x = 0; ; x++ ))
 do
@@ -26,10 +26,10 @@ do
 	if [ `echo "${f1} > ${best_f1}" | bc` -eq 1 ]
 	then
 		best_f1=${f1}
-		mv ${this_dir}/conll2003-model/split-* ${best_dir}/
+		mv ${this_dir}/conll2003-model/${model:-split}-* ${best_dir}/
 		echo "${info}"
 		echo "f1: ${info}" | \
-			mail -s "best-f1: ${best_f1}" `whoami`@eecs.yorku.ca
+			mail -s "best-f1: ${best_f1} ${extra_opt}" `whoami`@eecs.yorku.ca
 	fi
 done
 

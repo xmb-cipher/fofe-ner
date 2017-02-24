@@ -53,73 +53,55 @@ def load_word_embedding( filename ):
 
 class mention_config( object ):
     def __init__( self, args = None ):
-        if args is None:
-            self.word_embedding = 'word2vec/reuters128'
-            self.data_path = 'processed-data'
-            self.n_char_embedding = 64
-            self.n_char = 128
-            self.n_batch_size = 512
-            self.learning_rate = 0.1024
-            self.momentum = 0.9
-            self.layer_size = '512,512,512'
-            self.max_iter = 64
-            self.feature_choice = 511
-            self.overlap_rate = 0.08
-            self.disjoint_rate = 0.016
-            self.dropout = True
-            self.n_ner_embedding = 32
-            self.char_alpha = 0.8
-            self.word_alpha = 0.5
-            self.n_window = 7
-            self.strictly_one_hot = True
-            self.hope_out = 0
-            self.n_label_type = 7
-            self.kernel_height = range(2, 10)
-            self.kernel_depth = [16] * 8
-            self.enable_distant_supervision = False
-            self.initialize_method = 'uniform'
-            self.language = 'eng'
-            self.average = False
-            self.is_2nd_pass = False
-        else:
-            self.word_embedding = args.word_embedding
-            self.data_path = args.data_path
-            self.n_char_embedding = args.n_char_embedding
-            self.n_char = args.n_char
-            self.n_batch_size = args.n_batch_size
-            self.learning_rate = args.learning_rate
-            self.momentum = args.momentum
-            self.layer_size = args.layer_size
-            self.max_iter = args.max_iter
-            self.feature_choice = args.feature_choice
-            self.overlap_rate = args.overlap_rate
-            self.disjoint_rate = args.disjoint_rate
-            self.dropout = args.dropout
-            self.n_ner_embedding = args.n_ner_embedding
-            self.char_alpha = args.char_alpha
-            self.word_alpha = args.word_alpha
-            self.n_window = args.n_window
-            self.strictly_one_hot = args.strictly_one_hot
-            self.hope_out = args.hope_out
-            self.n_label_type = args.n_label_type
-            self.kernel_height = [ int(x) for x in args.kernel_height.split(',') ]
-            self.kernel_depth = [ int(x) for x in args.kernel_depth.split(',') ]
-            self.enable_distant_supervision = args.enable_distant_supervision
-            self.initialize_method = args.initialize_method
-            self.language = args.language
-            self.average = args.average
-            self.is_2nd_pass = args.is_2nd_pass
+        # default config
+        self.word_embedding = 'word2vec/reuters128'
+        self.data_path = 'processed-data'
+        self.n_char_embedding = 64
+        self.n_char = 128
+        self.n_batch_size = 512
+        self.learning_rate = 0.1024
+        self.momentum = 0.9
+        self.layer_size = '512,512,512'
+        self.max_iter = 64
+        self.feature_choice = 511
+        self.overlap_rate = 0.08
+        self.disjoint_rate = 0.016
+        self.dropout = True
+        self.n_ner_embedding = 32
+        self.char_alpha = 0.8
+        self.word_alpha = 0.5
+        self.n_window = 7
+        self.strictly_one_hot = True
+        self.hope_out = 0
+        self.n_label_type = 7
+        self.kernel_height = range(2, 10)
+        self.kernel_depth = [16] * 8
+        self.enable_distant_supervision = False
+        self.initialize_method = 'uniform'
+        self.kernel_depth = ','.join( ['16'] * 8 )
+        self.kernel_height = '2,3,4,5,6,7,8,9'
+
+        # KBP-specific config
+        self.language = 'eng'
+        self.average = False
+        self.is_2nd_pass = False
+
+        if args is not None:
+            self.__dict__.update( args.__dict__ )
+
+        self.kernel_depth = [ int(d) for d in self.kernel_depth.split(',') ]
+        self.kernel_height = [ int(h) for h in self.kernel_height.split(',') ]
+        
         # these parameters are not decided by the input to the program
         # I put some placeholders here; they will be eventually modified
-        self.algorithm = 1          # highest first
-        self.threshold = 0.5
-        # self.drop_rate = 0.4096 if self.dropout else 0
-        self.drop_rate = 0.512 if self.dropout else 0
-        self.n_word1 = 100000
-        self.n_word2 = 100000
-        self.n_word_embedding1 = 256
-        self.n_word_embedding2 = 256
-        self.customized_threshold = None
+        self.algorithm = 1              # highest first, decided by training
+        self.threshold = 0.5            # decided by training
+        self.drop_rate = 0.4096 if self.dropout else 0
+        self.n_word1 = 100000           # decided by self.word_embedding
+        self.n_word2 = 100000           # decided by self.word_embedding
+        self.n_word_embedding1 = 256    # decided by self.word_embedding
+        self.n_word_embedding2 = 256    # decided by self.word_embedding
+        self.customized_threshold = None    # not used any more
         assert len( self.kernel_height ) == len( self.kernel_depth )
 
 
@@ -127,7 +109,7 @@ class mention_config( object ):
 
 
 class fofe_mention_net( object ):
-    def __init__( self, config = None ):
+    def __init__( self, config = None, gpu_option = 0.96 ):
         """
         Parameters
         ----------
@@ -166,8 +148,11 @@ class fofe_mention_net( object ):
         # TODO: create a graph instead of using default graph
         #       otherwise, we cannot instantiate multiple fofe_mention_nets
         tf.reset_default_graph()
-        self.session = tf.Session( config = tf.ConfigProto( gpu_options = tf.GPUOptions() ) )
-
+        if gpu_option is not None:
+            gpu_option = tf.GPUOptions( per_process_gpu_memory_fraction = gpu_option )
+            self.session = tf.Session( config = tf.ConfigProto( gpu_options = gpu_option ) )
+        else:
+             self.session = tf.Session()
 
         if os.path.exists( self.config.word_embedding + '-case-insensitive.word2vec' ) \
             and os.path.exists( self.config.word_embedding + '-case-sensitive.word2vec' ):
@@ -368,31 +353,37 @@ class fofe_mention_net( object ):
 
         self.W = []
         self.b = []   # weights & bias of fully-connected layers
+        self.param = []
 
         if initialize_method == 'uniform':
             val_rng = numpy.float32(2.5 / numpy.sqrt(n_char + n_char_embedding))
             self.char_embedding = tf.Variable( tf.random_uniform( 
                                     [n_char, n_char_embedding], minval = -val_rng, maxval = val_rng ) )
+            self.param.append( self.char_embedding )
         
             self.conv_embedding = tf.Variable( tf.random_uniform( 
                                     [n_char, n_char_embedding], minval = -val_rng, maxval = val_rng ) )
+            self.param.append( self.conv_embedding )
 
             val_rng = numpy.float32(2.5 / numpy.sqrt(n_label_type + n_ner_embedding + 1))
             self.ner_embedding = tf.Variable( tf.random_uniform( 
                                     [n_label_type + 1 ,n_ner_embedding], minval = -val_rng, maxval = val_rng ) )
+            self.param.append( self.ner_embedding )
             
             val_rng = numpy.float32(2.5 / numpy.sqrt(96 * 96 + n_char_embedding))
             self.bigram_embedding = tf.Variable( tf.random_uniform( 
                                     [96 * 96, n_char_embedding], minval = -val_rng, maxval = val_rng ) )
+            self.param.append( self.bigram_embedding )
             
             self.kernels = [ tf.Variable( tf.random_uniform( 
                                 [h, n_char_embedding, 1, d], 
                                 minval = -2.5 / numpy.sqrt(1 + h * n_char_embedding * d), 
                                 maxval = 2.5 / numpy.sqrt(1 + h * n_char_embedding * d) ) ) for \
                             (h, d) in zip( kernel_height, kernel_depth ) ]
+            self.param.extend( self.kernels )
 
             self.kernel_bias = [ tf.Variable( tf.zeros( [d] ) ) for d in kernel_depth ]
-
+            self.param.extend( self.kernel_bias )
 
             if hope_out > 0:
                 val_rng = 2.5 / numpy.sqrt( hope_in + hope_out )
@@ -406,6 +397,8 @@ class fofe_mention_net( object ):
                 val_rng = numpy.float32(2.5 / numpy.sqrt(i + o))
                 self.W.append( tf.Variable( tf.random_uniform( [i, o], minval = -val_rng, maxval = val_rng ) ) )
                 self.b.append( tf.Variable( tf.zeros( [o] ) )  )
+            self.param.extend( self.W )
+            self.param.extend( self.b )
               
             del val_rng
             
@@ -519,11 +512,16 @@ class fofe_mention_net( object ):
                 layer_output[-1] = tf.nn.relu( layer_output[-1] )
                 layer_output[-1] = tf.nn.dropout( layer_output[-1], self.keep_prob )
 
-        self.xent = tf.reduce_mean( tf.nn.sparse_softmax_cross_entropy_with_logits( logits = layer_output[-1], labels = self.label ) )
+        self.xent = tf.reduce_mean( tf.nn.sparse_softmax_cross_entropy_with_logits( 
+                                        logits = layer_output[-1], labels = self.label ) )
 
-        # In tensorflow, weight decay is coded in objective function
-        # for param in  W + b:
-        #   xent = xent + 5e-4 * tf.nn.l2_loss( param )
+        if config.l1 > 0:
+            for param in self.param:
+                self.xent = self.xent + config.l1 * tf.reduce_sum( tf.abs( param ) )
+
+        if config.l2 > 0:
+            for param in  self.param:
+                self.xent = self.xent + config.l2 * tf.nn.l2_loss( param )
 
         self.predicted_values = tf.nn.softmax( layer_output[-1] )
         _, top_indices = tf.nn.top_k( self.predicted_values )
