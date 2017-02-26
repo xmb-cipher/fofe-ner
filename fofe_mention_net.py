@@ -13,7 +13,9 @@ License: MIT License (see ../LICENSE)
 
 
 import numpy, logging, time, copy, os, cPickle
+
 import tensorflow as tf
+tf.logging.set_verbosity(tf.logging.ERROR)
 
 # from CoNLL2003eval import evaluation
 from gigaword2feature import * 
@@ -80,6 +82,8 @@ class mention_config( object ):
         self.initialize_method = 'uniform'
         self.kernel_depth = ','.join( ['16'] * 8 )
         self.kernel_height = '2,3,4,5,6,7,8,9'
+        self.l1 = 0
+        self.l2 = 0
 
         # KBP-specific config
         self.language = 'eng'

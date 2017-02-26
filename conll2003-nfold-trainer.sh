@@ -92,7 +92,11 @@ done
 
 INFO "evaluating... "
 
-${this_dir}/conll2003-nfold-eval.py ${extra_opt} ${dir}/eng.testb ${dir}/predicted
+${this_dir}/conll2003-nfold-eval.py \
+	${extra_opt} \
+	conll2003-model/${model:-split} \
+	${dir}/eng.testb \
+	${dir}/predicted
 
 INFO "final result"
 

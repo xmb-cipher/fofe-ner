@@ -63,6 +63,8 @@ if __name__ == '__main__':
 
         with open( '%s.config' % model, 'rb' ) as fp:
             config1 = cPickle.load( fp )
+        config1.l1 = 0
+        config1.l2 = 0
         logger.info( config1.__dict__ )
         logger.info( 'config1st loaded' )
 
@@ -129,21 +131,22 @@ if __name__ == '__main__':
 
     logger.info( 'evaluation set passed first time' )
 
-    pp = PredictionParser( SampleGenerator( args.testb ), predicted1st, config1.n_window )
+    pp = list(PredictionParser( SampleGenerator( args.testb ), predicted1st, config1.n_window ))
 
-    output1st = os.path.join(buf_dir, 'output1st')
-    with open( output1st, 'wb' ) as out1st:
-        algorithm1 = sorted([(y, x) for (x, y) in algo2freq.items()], reverse = True)[0][1]     
-        _, _, _, info = evaluation( pp, threshold1, algorithm1,
-                                    conll2003out = out1st,
-                                    sentence_iterator = SentenceIterator( args.testb ) )
-    logger.info( '\n' + info )
+    for threshold in numpy.arange(0.1, 1, 0.1):
+        output1st = os.path.join(buf_dir, 'output1st')
+        with open( output1st, 'wb' ) as out1st:
+            algorithm1 = sorted([(y, x) for (x, y) in algo2freq.items()], reverse = True)[0][1]     
+            _, _, _, info = evaluation( pp, threshold, algorithm1,
+                                        conll2003out = out1st,
+                                        sentence_iterator = SentenceIterator( args.testb ) )
+        logger.info( '\n' + info )
 
-    cmd = 'cat %s | conlleval' % output1st
-    process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
-    (out, err) = process.communicate()
-    exit_code = process.wait()
-    logger.info( '\x1B[32mofficial\n%s\x1B[0m' % out )
+        cmd = 'cat %s | conlleval' % output1st
+        process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
+        (out, err) = process.communicate()
+        exit_code = process.wait()
+        logger.info( '\x1B[32mofficial\n%s\x1B[0m' % out )
 
     logger.info( 'first-round output generated (threshold %d, algorithm %d)' \
                     % (threshold1, algorithm1) )
@@ -164,6 +167,8 @@ if __name__ == '__main__':
 
         with open( '%s.config' % model, 'rb' ) as fp:
             config2 = cPickle.load( fp )
+        config2.l1 = 0
+        config2.l2 = 0
         config2.is_2nd_pass = True
         assert config2.n_window == config1.n_window, 'inconsisitent window size'
         logger.info( config2.__dict__ )
@@ -244,7 +249,7 @@ if __name__ == '__main__':
         _, _, _, info = evaluation( pp, threshold2, algorithm2,
                                     conll2003out = out2nd,
                                     sentence_iterator = SentenceIterator( args.testb ) )
-    logger.info( 'non-official\n' + info )
+    # logger.info( 'non-official\n' + info )
 
     cmd = 'cat %s | conlleval' % output2nd
     process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
@@ -258,27 +263,41 @@ if __name__ == '__main__':
     ########## combine 1st-pass and 2nd-pass result in terms of raw probability
     ################################################################################
 
-    prob3 = (prob1 + prob2) / 2
-    prob3[:,1:2] = prob3[:,2:].argmax( axis = 1 ).reshape(-1, 1)
-    threshold = (threshold1 + threshold2) / 2
+    # for weight in numpy.arange(0.1, 1, 0.1):
+    for weight in [0.6]:
+        prob3 = weight * prob1 + (1 - weight) * prob2
 
-    predicted3rd = os.path.join( buf_dir, 'predict3rd' )
-    numpy.savetxt( predicted3rd, prob3, 
-                   fmt = '%d  %d' + '  %f' * (config2.n_label_type + 1) )
+        prob3[:,1:2] = prob3[:,2:].argmax( axis = 1 ).reshape(-1, 1)
+        threshold = (threshold1 + threshold2) / 2
+        logger.info( '\x1B[32mthreshold1: %f, threshold2: %f\n\x1B[0m' % (threshold1, threshold2) )
 
-    pp = PredictionParser( SampleGenerator( args.testb ), predicted3rd, config2.n_window )
+        predicted3rd = os.path.join( buf_dir, 'predict3rd' )
+        numpy.savetxt( predicted3rd, prob3, 
+                       fmt = '%d  %d' + '  %f' * (config2.n_label_type + 1) )
 
-    output3rd = os.path.join(buf_dir, 'output3rd')
-    with open( output3rd, 'wb' ) as out3rd:
-        _, _, _, info = evaluation( pp, threshold, config2.algorithm,
-                                    conll2003out = out3rd,
-                                    sentence_iterator = SentenceIterator( args.testb ) )
-    logger.info( 'non-official\n' + info )
-        
-    cmd = 'cat %s | conlleval' % output3rd
-    process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
-    (out, err) = process.communicate()
-    exit_code = process.wait()
-    logger.info( '\x1B[32mofficial\n%s\x1B[0m' % out )
+        pp = list( PredictionParser( SampleGenerator( args.testb ), predicted3rd, config2.n_window ) )
+
+        # for threshold in numpy.arange(0.2, 1, 0.1):
+        for threshold in [0.4]:
+            output3rd = os.path.join(buf_dir, 'output3rd')
+            with open( output3rd, 'wb' ) as out3rd:
+                _, _, _, info = evaluation( pp, threshold, config2.algorithm,
+                                            conll2003out = out3rd,
+                                            sentence_iterator = SentenceIterator( args.testb ) )
+            # logger.info( 'non-official\n' + info )
+                
+            cmd = 'cat %s | conlleval' % output3rd
+            process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
+            (out, err) = process.communicate()
+            exit_code = process.wait()
+            logger.info( '%f * prob1 + %f * prob2' % (weight, (1 - weight)) )
+            logger.info( 'threshold: %f' % threshold )
+            logger.info( '\x1B[32mofficial\n%s\x1B[0m' % out )
+
+            cmd = 'visualizer/compose-html.py %s %s %s; cp %s visualizer/error.testb' % \
+                    (args.testb, output3rd, 'visualizer/error.html', output3rd)
+            process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
+            (out, err) = process.communicate()
+            exit_code = process.wait()
 
     logger.info( '1st-pass and 2nd-pass combined at probability level' )

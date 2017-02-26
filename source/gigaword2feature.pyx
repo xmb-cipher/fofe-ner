@@ -26,7 +26,7 @@ cdef extern from "<regex>" namespace "std" nogil:
 from scipy.sparse import csr_matrix
 from Queue import Queue
 from threading import Thread
-from itertools import izip, islice, imap
+from itertools import izip, islice, imap, combinations, chain
 from hanziconv import HanziConv
 import numpy, re, random, logging, codecs, copy
 
@@ -780,69 +780,90 @@ class batch_constructor:
         cdef bint unsure
 
         for sentence, ner_begin, ner_end, ner_label in parser:
-            for i in range( len(sentence) ):
-                for j in range( i + 1, len(sentence) + 1 ):
-                    unsure, found = False, False
-                    if j - i > window:
-                        break
-                    label = n_label_type
-                    # look for exact match
-                    for k in range(len(ner_label)):
-                        if i == ner_begin[k] and j == ner_end[k]:
-                            label = ner_label[k]
-                            if label < n_label_type:
-                                self.positive.append( len(self.example) )
-                            else:
-                                unsure = True
-                            found = True
-                            break
-                    # look for overlap
-                    if not found:
-                        for k in range(len(ner_label)):
-                            if i < ner_end[k] and ner_begin[k] < j:
-                                label = n_label_type + 1
-                                self.overlap.append( len(self.example) )
-                                break
-                    if unsure:
-                        continue
-                    if label == n_label_type:
-                        self.disjoint.append( len(self.example) )
-                    if label == n_label_type + 1:
-                        label = n_label_type
-
-                    gazetteer_match = numpy.zeros( (n_label_type + 1,), dtype = numpy.float32 )
-                    if self.gazetteer is not None:
-                        if language != 'cmn':
-                            name = u' '.join(sentence[i:j])
-                        else:
-                            name = u''.join( w[:w.find(u'|iNCML|')] for w in sentence[i:j] )
-                        for k, g in enumerate(self.gazetteer):
-                            if name in g:
-                                gazetteer_match[k] = 1
-
-                    self.example.append( example( len(self.sentence1), 
-                                                  i, j, label ,gazetteer_match) )
+            ner_begin = numpy.asarray(ner_begin, dtype = numpy.int32)
+            ner_end = numpy.asarray(ner_end, dtype = numpy.int32)
+            ner_label = numpy.asarray(ner_label, dtype = numpy.int32)
+            label1st_powerset = []
+            # if self.is2ndPass and len(ner_label) > 0:
+            #     powerItr = combinations(numpy.arange(len(ner_label)), len(ner_label) - 1)
+            #     # powerItr = chain.from_iterable( 
+            #     #             combinations(numpy.arange(len(ner_label)), x) \
+            #     #                         for x in xrange(len(ner_label) + 1) )
+            #     # powerItr = reduce(lambda result, x: \
+            #     #         result + [subset + [x] for subset in result], range(len(ner_label)), [[]])
+            #     for label1st in powerItr:
+            #         label1st = numpy.asarray(label1st, dtype = numpy.int32)
+            #         label1st_powerset.append( (ner_begin[label1st], 
+            #                                 ner_end[label1st], ner_label[label1st]) )
             
-            label1st = (ner_begin, ner_end, ner_label) if self.is2ndPass else None
-            if language != 'cmn': 
-                self.sentence1.append( processed_sentence( sentence, numericizer1, 
-                                                           alpha, language,
-                                                           label1st ) )
-                self.sentence2.append( processed_sentence( sentence, numericizer2, 
-                                                           alpha, language,
-                                                           label1st ) )
-            else:
-                char_sequence, word_sequence = [], []
-                for token in sentence:
-                    c, w = token.split( u'|iNCML|' )
-                    char_sequence.append( c )
-                    word_sequence.append( w )
-                self.sentence1.append( processed_sentence( char_sequence, numericizer1,
-                                                           alpha, language,
-                                                           label1st ) )
-                self.sentence2.append( processed_sentence( word_sequence, numericizer2,
-                                                           alpha, language,
-                                                           label1st ) )
+            label1st_powerset.append( (ner_begin, ner_end, ner_label) )
+
+            for label1st in label1st_powerset:
+                for i in range( len(sentence) ):
+                    for j in range( i + 1, len(sentence) + 1 ):
+                        unsure, found = False, False
+                        if j - i > window:
+                            break
+                        label = n_label_type
+                        # look for exact match
+                        for k in range(len(ner_label)):
+                            if i == ner_begin[k] and j == ner_end[k]:
+                                label = ner_label[k]
+                                if label < n_label_type:
+                                    self.positive.append( len(self.example) )
+                                else:
+                                    unsure = True
+                                found = True
+                                break
+                        # look for overlap
+                        if not found:
+                            for k in range(len(ner_label)):
+                                if i < ner_end[k] and ner_begin[k] < j:
+                                    label = n_label_type + 1
+                                    self.overlap.append( len(self.example) )
+                                    break
+                        if unsure:
+                            continue
+                        if label == n_label_type:
+                            self.disjoint.append( len(self.example) )
+                        if label == n_label_type + 1:
+                            label = n_label_type
+
+                        gazetteer_match = numpy.zeros( (n_label_type + 1,), dtype = numpy.float32 )
+                        if self.gazetteer is not None:
+                            if language != 'cmn':
+                                name = u' '.join(sentence[i:j])
+                            else:
+                                name = u''.join( w[:w.find(u'|iNCML|')] for w in sentence[i:j] )
+                            for k, g in enumerate(self.gazetteer):
+                                if name in g:
+                                    gazetteer_match[k] = 1
+
+                        self.example.append( example( len(self.sentence1), 
+                                                      i, j, label ,gazetteer_match) )
+                
+                if not self.is2ndPass:
+                    label1st = None
+
+                if language != 'cmn': 
+                    self.sentence1.append( processed_sentence( sentence, numericizer1, 
+                                                               alpha, language,
+                                                               label1st ) )
+                    self.sentence2.append( processed_sentence( sentence, numericizer2, 
+                                                               alpha, language,
+                                                               label1st ) )
+                else:
+                    char_sequence, word_sequence = [], []
+                    for token in sentence:
+                        c, w = token.split( u'|iNCML|' )
+                        char_sequence.append( c )
+                        word_sequence.append( w )
+                    self.sentence1.append( processed_sentence( char_sequence, numericizer1,
+                                                               alpha, language,
+                                                               label1st ) )
+                    self.sentence2.append( processed_sentence( word_sequence, numericizer2,
+                                                               alpha, language,
+                                                               label1st ) )
 
         self.positive = numpy.asarray( self.positive, dtype = numpy.int32 )
         self.overlap = numpy.asarray( self.overlap, dtype = numpy.int32 )

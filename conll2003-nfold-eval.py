@@ -9,6 +9,7 @@ if __name__ == '__main__':
                          level = logging.INFO )
 
     parser = argparse.ArgumentParser()
+    parser.add_argument( 'basename', type = str, help = 'basename of a 5fold-cross-validation model' )
     parser.add_argument( 'testb', type = str,
                           help = 'path to eng.testb of conll2003' )
     parser.add_argument( 'combined_out', type = str,
@@ -32,8 +33,9 @@ if __name__ == '__main__':
 
     for i in xrange(5):
         ########## load config ##########
-        basename = os.path.join( os.path.dirname(__file__),
-                                 'conll2003-model', 'split-%d' % i )
+        # basename = os.path.join( os.path.dirname(__file__),
+        #                          'conll2003-model', 'split-%d' % i )
+        basename = '%s-%d' % (args.basename, i)
         with open( '%s.config' % basename, 'rb' ) as fp:
             config = cPickle.load( fp )
         logger.info( config.__dict__ )

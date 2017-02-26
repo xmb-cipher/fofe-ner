@@ -22,7 +22,7 @@ do
 
 	conll2003-ner-trainer.py \
 		word2vec/reuters256 \
-		processed-data \
+		${data:-processed-data} \
 		--layer_size 512,512,512 \
 		--n_batch_size 512 \
 		--learning_rate 0.1024 \
@@ -52,7 +52,7 @@ do
 		INFO "model copied to ${best_dir}"
 		echo "${info}"
 		echo "f1: ${info}" | \
-			mail -s "best-1st-f1: ${best_f1}" `whoami`@eecs.yorku.ca
+			mail -s "best-f1: ${best_f1} ${model} ${extra_opt}" `whoami`@eecs.yorku.ca
 	fi
 done
 

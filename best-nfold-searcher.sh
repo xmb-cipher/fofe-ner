@@ -12,7 +12,7 @@ best_dir=${this_dir}/conll2003-model/best-model
 tmp_dir=`mktemp -d`
 trap "rm -rf ${tmp_dir}" EXIT
 
-best_f1=${best_f1:-0}
+export best_f1=${best_f1:-0}
 
 for (( x = 0; ; x++ ))
 do
