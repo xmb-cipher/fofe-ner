@@ -1,4 +1,4 @@
-var bratLocation = 'static/js';
+var bratLocation = 'static/js/'; //'https://storage.googleapis.com/corenlp/js/brat';
 head.js(
     // External libraries
     bratLocation + '/client/lib/jquery.min.js',
@@ -17,8 +17,10 @@ head.js(
     bratLocation + '/client/src/visualizer.js'
 );
 
+
 var webFontURLs = [
-    bratLocation + '/static/fonts/Astloch-Bold.ttf',
-    bratLocation + '/static/fonts/PT_Sans-Caption-Web-Regular.ttf',
-    bratLocation + '/static/fonts/Liberation_Sans-Regular.ttf'
+    'static/fonts/Astloch-Bold.ttf',
+    'static/fonts/PT_Sans-Caption-Web-Regular.ttf',
+    'static/fonts/Liberation_Sans-Regular.ttf',
 ];
+

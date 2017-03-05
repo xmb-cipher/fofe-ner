@@ -57,15 +57,42 @@ def CoNLL2003( filename ):
 
 
 
-def CoNLL2003Doc( filename ):
-    result = []
-    for sent, boe, eoe, coe in CoNLL2003( filename ):
-        if len(sent) == 1 and sent[0] == '-DOCSTART-':
-            if len(result) > 0:
+def CoNLL2003Doc( filename1, filename2 ):
+    result, has_error = [], False
+    for (sent1, boe1, eoe1, coe1), (sent2, boe2, eoe2, coe2) in \
+            zip(CoNLL2003(filename1), CoNLL2003(filename2)):
+        assert sent1 == sent2, 'inconsisitent files'
+        if len(sent1) == 1 and sent1[0] == '-DOCSTART-':
+            if len(result) and has_error > 0:
                 yield result
-                result = []
+                result, has_error = [], False
             continue
-        result.append( (sent, boe, eoe, coe) )
+
+        soln1 = set(zip(boe1, eoe1, coe1))
+        soln2 = set(zip(boe2, eoe2, coe2))
+        false_pos = soln1 - soln2
+        false_neg = soln2 - soln1
+        true_pos = soln1 & soln2
+
+        if len(false_pos) != 0 or len(false_neg) != 0:
+            has_error = True
+
+        boe, eoe, coe = [], [], []
+        for (b, e, c) in true_pos:
+            boe.append( b )
+            eoe.append( e )
+            coe.append( c )
+        for (b, e, c) in false_pos:
+            boe.append( b )
+            eoe.append( e )
+            coe.append( c + 4 )
+        for (b, e, c) in false_neg:
+            boe.append( b )
+            eoe.append( e )
+            coe.append( c + 8 )
+
+        result.append( (sent1, boe, eoe, coe) )
+
     if len(result) > 0:
         yield result
 
@@ -74,7 +101,9 @@ def CoNLL2003Doc( filename ):
 # experimental, inefficient implementation
 # should count words one by one
 def doc2js( doc ):
-    cls2ner = [ 'PER', 'LOC', 'ORG', 'MISC' ]
+    cls2ner = [ 'PER', 'LOC', 'ORG', 'MISC', 
+                'FP-PER', 'FP-LOC', 'FP-ORG', 'FP-MISC',
+                'FN-PER', 'FN-LOC', 'FN-ORG', 'FN-MISC' ]
     text, entities, offset, n_entities = '', [], 0, 0
     for sent, boe, eoe, coe in doc:
         acc_len = [ offset ]
@@ -146,19 +175,51 @@ var collData = {
     entity_types: [ 
     {   type   : 'PER',
         labels : ['PER'],
-        bgColor: '#ff0000',
+        bgColor: '#ffffff',
         borderColor: 'darken' },
     {   type   : 'LOC',
         labels : ['LOC'],
-        bgColor: '#00ff00',
+        bgColor: '#ffffff',
         borderColor: 'darken' },
     {   type   : 'ORG',
         labels : ['ORG'],
-        bgColor: '#0000ff',
+        bgColor: '#ffffff',
         borderColor: 'darken' },
     {   type   : 'MISC',
         labels : ['MISC'],
-        bgColor: '#888888',
+        bgColor: '#ffffff',
+        borderColor: 'darken' },
+    {   type   : 'FP-PER',
+        labels : ['FP-PER'],
+        bgColor: 'Red',
+        borderColor: 'darken' },
+    {   type   : 'FP-LOC',
+        labels : ['FP-LOC'],
+        bgColor: 'BLUE',
+        borderColor: 'darken' },
+    {   type   : 'FP-ORG',
+        labels : ['FP-ORG'],
+        bgColor: 'Green',
+        borderColor: 'darken' },
+    {   type   : 'FP-MISC',
+        labels : ['FP-MISC'],
+        bgColor: 'Silver',
+        borderColor: 'darken' },
+     {   type   : 'FN-PER',
+        labels : ['FN-PER'],
+        bgColor: 'Red',
+        borderColor: 'darken' },
+    {   type   : 'FN-LOC',
+        labels : ['FN-LOC'],
+        bgColor: 'Blue',
+        borderColor: 'darken' },
+    {   type   : 'FN-ORG',
+        labels : ['FN-ORG'],
+        bgColor: 'Green',
+        borderColor: 'darken' },
+    {   type   : 'FN-MISC',
+        labels : ['FN-MISC'],
+        bgColor: 'Grey',
         borderColor: 'darken' }
     ]
 };
@@ -191,20 +252,12 @@ var collData = {
     div = ''
     js2 = ''
 
-    for i, (x, y) in enumerate( zip(CoNLL2003Doc(args.gold), CoNLL2003Doc(args.system)) ):
-        if x == y:
-            continue
-
+    for i, x in enumerate( CoNLL2003Doc(args.system, args.gold) ):
         js1 += 'var dataX%d = %s;\n' % (i, str(doc2js(x)))
-        js1 += 'var dataY%d = %s;\n' % (i, str(doc2js(y)))
-
-        div += "<div>"        
-        div += "<div id = 'docX-%d', class = 'left-side'></div>\n" % i
-        div += "<div id = 'docY-%d', class = 'right-side'></div>\n" % i
-        div += "</div>"
+       
+        div += "<div id = 'docX-%d', class = 'center'></div>\n" % i
 
         js2 += "        Util.embed('docX-%d', collData, dataX%d, webFontURLs);\n" % (i, i)
-        js2 += "        Util.embed('docY-%d', collData, dataY%d, webFontURLs);\n" % (i, i)
 
     js1 += '</script>'
     js2 = '\n'.join([func_head, js2, func_tail])
