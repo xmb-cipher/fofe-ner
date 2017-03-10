@@ -1,4 +1,4 @@
-var bratLocation = 'static/js';
+var bratLocation = 'js';
 head.js(
     // External libraries
     bratLocation + '/client/lib/jquery.min.js',

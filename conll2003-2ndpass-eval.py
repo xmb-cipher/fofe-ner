@@ -96,7 +96,7 @@ if __name__ == '__main__':
 
         ################################################################################
 
-        mention_net = fofe_mention_net( config1 )
+        mention_net = fofe_mention_net( config1, None )
         mention_net.fromfile( model )
         logger.info( 'model loaded' )
 
@@ -205,7 +205,7 @@ if __name__ == '__main__':
 
         ################################################################################
 
-        mention_net = fofe_mention_net( config2 )
+        mention_net = fofe_mention_net( config2, None )
         mention_net.fromfile( model )
         logger.info( 'model loaded' )
 
@@ -264,7 +264,7 @@ if __name__ == '__main__':
     ################################################################################
 
     # for weight in numpy.arange(0.1, 1, 0.1):
-    for weight in [0.618]:
+    for weight in [0.6]:
         prob3 = weight * prob1 + (1 - weight) * prob2
 
         prob3[:,1:2] = prob3[:,2:].argmax( axis = 1 ).reshape(-1, 1)
