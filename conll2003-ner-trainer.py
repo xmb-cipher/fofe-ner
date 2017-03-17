@@ -85,6 +85,7 @@ if __name__ == '__main__':
     parser.add_argument( '--gpu_fraction', type = float, default = 0.96 )
     parser.add_argument( '--l1', type = float, default = 0 )
     parser.add_argument( '--l2', type = float, default = 0 )
+    parser.add_argument( '--n_pattern', type = int, default = 0 )
 
     # TODO
     # these hyper parameters are from kbp-ed-trainer

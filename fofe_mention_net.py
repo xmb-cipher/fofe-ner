@@ -84,6 +84,7 @@ class mention_config( object ):
         self.kernel_height = '2,3,4,5,6,7,8,9'
         self.l1 = 0
         self.l2 = 0
+        self.n_pattern = 0
 
         # KBP-specific config
         self.language = 'eng'
@@ -143,6 +144,7 @@ class fofe_mention_net( object ):
         kernel_depth = config.kernel_depth
         enable_distant_supervision = config.enable_distant_supervision
         initialize_method = config.initialize_method
+        n_pattern = config.n_pattern
  
         if config is not None:
             self.config = copy.deepcopy( config )
@@ -155,7 +157,9 @@ class fofe_mention_net( object ):
         # tf.reset_default_graph()
         if gpu_option is not None:
             gpu_option = tf.GPUOptions( per_process_gpu_memory_fraction = gpu_option )
-            self.session = tf.Session( config = tf.ConfigProto( gpu_options = gpu_option ),
+            self.session = tf.Session( config = tf.ConfigProto( 
+                                                gpu_options = gpu_option,
+                                                log_device_placement = True ),
                                        graph = self.graph )
         else:
              self.session = tf.Session( graph = self.graph )
@@ -170,6 +174,8 @@ class fofe_mention_net( object ):
 
             self.n_word1 = projection1.shape[0]
             self.n_word2 = projection2.shape[0]
+            n_word1 = projection1.shape[0]
+            n_word2 = projection2.shape[0]
 
             n_word_embedding1 = projection1.shape[1]
             n_word_embedding2 = projection2.shape[1]
@@ -398,6 +404,35 @@ class fofe_mention_net( object ):
                     val_rng = numpy.float32(2.5 / numpy.sqrt(i + o))
                     self.W.append( tf.Variable( tf.random_uniform( [i, o], minval = -val_rng, maxval = val_rng ) ) )
                     self.b.append( tf.Variable( tf.zeros( [o] ) )  )
+
+                if n_pattern > 0:
+                    val_rng = numpy.float32(2.5 / numpy.sqrt(n_pattern + n_word1))
+                    self.pattern1l = tf.Variable( 
+                        tf.random_uniform( [n_pattern, n_word1],
+                                            minval = -val_rng, maxval = val_rng  ) )
+                    self.pattern1lb = tf.Variable(
+                        tf.random_uniform( [n_pattern], 
+                                            minval = -val_rng, maxval = val_rng ) )
+                    self.pattern1r = tf.Variable( 
+                        tf.random_uniform( [n_pattern, n_word1],
+                                            minval = -val_rng, maxval = val_rng  ) )
+                    self.pattern1rb = tf.Variable(
+                        tf.random_uniform( [n_pattern], 
+                                            minval = -val_rng, maxval = val_rng ) )
+
+                    val_rng = numpy.float32(2.5 / numpy.sqrt(n_pattern + n_word2))
+                    self.pattern2l = tf.Variable( 
+                        tf.random_uniform( [n_pattern, n_word2],
+                                            minval = -val_rng, maxval = val_rng  ) )
+                    self.pattern2lb = tf.Variable(
+                        tf.random_uniform( [n_pattern], 
+                                            minval = -val_rng, maxval = val_rng ) )
+                    self.pattern2r = tf.Variable( 
+                        tf.random_uniform( [n_pattern, n_word2],
+                                            minval = -val_rng, maxval = val_rng  ) )
+                    self.pattern2rb = tf.Variable(
+                        tf.random_uniform( [n_pattern], 
+                                            minval = -val_rng, maxval = val_rng ) )
                   
                 del val_rng
                 
@@ -429,6 +464,33 @@ class fofe_mention_net( object ):
                     self.W.append( tf.Variable( tf.truncated_normal( [i, o], stddev = numpy.sqrt(2./(i * o)) ) ) )
                     self.b.append( tf.Variable( tf.zeros( [o] ) ) )
 
+                if n_pattern > 0:
+                    self.pattern1l = tf.Variable( 
+                        tf.truncated_normal( [n_pattern, n_word1],
+                                            stddev = numpy.sqrt(2./(n_pattern * n_word1)) ) )
+                    self.pattern1r = tf.Variable( 
+                        tf.truncated_normal( [n_pattern, n_word1],
+                                            stddev = numpy.sqrt(2./(n_pattern * n_word1)) ) )
+                    self.pattern1lb = tf.Variable( 
+                        tf.truncated_normal( [n_pattern],
+                                            stddev = numpy.sqrt(2./(n_pattern * n_word1)) ) )
+                    self.pattern1rb = tf.Variable( 
+                        tf.truncated_normal( [n_pattern],
+                                            stddev = numpy.sqrt(2./(n_pattern * n_word1)) ) )
+                    
+                    self.pattern2l = tf.Variable( 
+                        tf.truncated_normal( [n_pattern, n_word2],
+                                            stddev = numpy.sqrt(2./(n_pattern * n_word2)) ) )
+                    self.pattern2r = tf.Variable( 
+                        tf.truncated_normal( [n_pattern, n_word2],
+                                            stddev = numpy.sqrt(2./(n_pattern * n_word2)) ) )
+                    self.pattern2lb = tf.Variable( 
+                        tf.truncated_normal( [n_pattern],
+                                            stddev = numpy.sqrt(2./(n_pattern * n_word2)) ) )
+                    self.pattern2rb = tf.Variable( 
+                        tf.truncated_normal( [n_pattern],
+                                            stddev = numpy.sqrt(2./(n_pattern * n_word2)) ) )
+
             if hope_out > 0:
                 self.param.append( self.U )
             self.param.append( self.char_embedding )
@@ -439,6 +501,10 @@ class fofe_mention_net( object ):
             self.param.extend( self.kernel_bias )
             self.param.extend( self.W )
             self.param.extend( self.b )
+            if n_pattern > 0:
+                self.param.extend( [self.pattern1l, self.pattern1r, 
+                                    self.pattern2l, self.pattern2r] )
+
             logger.info( 'variable defined' )
 
             ################################################################################
@@ -450,6 +516,7 @@ class fofe_mention_net( object ):
                                                                    'VALID' ) + bb ),
                                                      reduction_indices = [1, 2] ) \
                             for kk,bb in zip( self.kernels, self.kernel_bias) ]
+
 
             lw1 = tf.SparseTensor( self.lw1_indices, self.lw1_values, self.shape1 )
             rw1 = tf.SparseTensor( self.rw1_indices, self.rw1_values, self.shape1 )
@@ -466,12 +533,62 @@ class fofe_mention_net( object ):
             lbc = tf.SparseTensor( self.lbc_indices, self.lbc_values, self.shape3 )
             rbc = tf.SparseTensor( self.rbc_indices, self.rbc_values, self.shape3 )
 
+            if n_pattern > 0:
+                def sparse_fofe( fofe, pattern, pattern_bias ):
+                    indices_f32 = tf.to_float( fofe.indices )
+                    sp_w = tf.transpose(
+                                tf.nn.relu( 
+                                    tf.sparse_tensor_dense_matmul( 
+                                            fofe, pattern, adjoint_b = True )
+                                    + pattern_bias
+                                )
+                            )
+                    # replicate the indices
+                    indices_rep = tf.tile( indices_f32, [n_pattern, 1] )
+                    # add n_pattern as highest dimension
+                    nnz = tf.to_int64( tf.shape(fofe.indices)[0] )
+                    indices_high = tf.to_float(
+                                        tf.reshape(
+                                            tf.range( n_pattern * nnz) / nnz,
+                                            [-1, 1]
+                                        )
+                                    )
+                    # effectively n_pattern * n_example * n_word
+                    indices_ext = tf.concat( [ indices_high, indices_rep ], 1 )
+                    # pattern * fofe
+                    values_ext = tf.multiply( 
+                                        tf.tile( fofe.values, [n_pattern] ),
+                                        tf.gather_nd( 
+                                            pattern,
+                                            tf.to_int64(
+                                                tf.concat( [ indices_ext[:,0:1], indices_ext[:,2:3] ], 1 )
+                                            )
+                                        )
+                                    )
+                    # re-weight by pattern importance
+                    values_ext_2d = tf.multiply(
+                                        values_ext,
+                                        tf.gather_nd( sp_w, tf.to_int64(indices_ext[:,0:2]) )
+                                    )
+                    values_att = tf.reduce_sum( tf.reshape( values_ext_2d, [n_pattern, -1] ), 0 )
+                    # re-group it as a SparseTensor
+                    return tf.SparseTensor( fofe.indices, values_att, fofe.dense_shape )
+
+                lw1 = sparse_fofe( lw1, self.pattern1l, self.pattern1lb )
+                rw1 = sparse_fofe( rw1, self.pattern1r, self.pattern1rb )
+                lw2 = sparse_fofe( lw2, self.pattern2l, self.pattern2lb )
+                rw2 = sparse_fofe( rw2, self.pattern2r, self.pattern2rb )
+
             # all sparse feature after projection
+
+            # case-insensitive in English / word embedding in Chinese
             lwp1 = tf.sparse_tensor_dense_matmul( lw1, self.word_embedding_1 )
             rwp1 = tf.sparse_tensor_dense_matmul( rw1, self.word_embedding_1 )
             lwp2 = tf.sparse_tensor_dense_matmul( lw2, self.word_embedding_1 )
             rwp2 = tf.sparse_tensor_dense_matmul( rw2, self.word_embedding_1 )
             bowp1 = tf.sparse_tensor_dense_matmul( bow1, self.word_embedding_1 )
+
+            # case-sensitive in English / character embedding in Chinese
             lwp3 = tf.sparse_tensor_dense_matmul( lw3, self.word_embedding_2 )
             rwp3 = tf.sparse_tensor_dense_matmul( rw3, self.word_embedding_2 )
             lwp4 = tf.sparse_tensor_dense_matmul( lw4, self.word_embedding_2 )
@@ -542,6 +659,24 @@ class fofe_mention_net( object ):
                                                                      use_locking = False ) \
                                            .minimize( self.xent, var_list = self.W + self.b )
             self.train_step = [ fully_connected_train_step ]
+
+            if n_pattern > 0:
+                __lambda = 0.01
+                sparse_fofe_step = tf.train.GradientDescentOptimizer(
+                                        self.lr,
+                                        use_locking = True
+                                    ).minimize( 
+                                        self.xent + 
+                                            __lambda * tf.reduce_sum( tf.abs( self.pattern1l ) ) +
+                                            __lambda * tf.reduce_sum( tf.abs( self.pattern1r ) ) +
+                                            __lambda * tf.reduce_sum( tf.abs( self.pattern2l ) ) +
+                                            __lambda * tf.reduce_sum( tf.abs( self.pattern2r ) ),
+                                        var_list = [ self.pattern1l, self.pattern1r,
+                                                     self.pattern2l, self.pattern2r,
+                                                     self.pattern1lb, self.pattern1rb,
+                                                     self.pattern2lb, self.pattern2rb ]
+                                    )
+                self.train_step.append( sparse_fofe_step )
 
 
             if feature_choice & 0b111 > 0:
