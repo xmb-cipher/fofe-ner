@@ -86,6 +86,10 @@ if __name__ == '__main__':
                          help = 'word embedding is averaged on number of characters ' + \
                                 'when word level feature is used in Chinese' )
 
+    # experimental
+    parser.add_argument( '--n_pattern', type = int, default = 0,
+                         help = 'number of patterns in sparse-fofe' )
+
 
     ########################################################################
 
@@ -135,7 +139,8 @@ if __name__ == '__main__':
     
     # it's assumed that there are exactly 2 files in 'data_path'
     # namely 'ed-eng-train' and 'ed-eng-eval'
-    kbp_gazetteer = gazetteer( config.data_path + '/kbp-gazetteer' )
+    kbp_gazetteer = gazetteer( config.data_path + '/%s-gaz' % config.language,
+                               mode = 'KBP' )
 
     # load all KBP training data and 90% KBP test data
     source = chain( imap( lambda x: x[1],

@@ -6,8 +6,7 @@
 # export CUDA_VISIBLE_DEVICES=1
 
 set -e
-this_script=`which $0`
-this_dir=`dirname ${this_script}`
+this_dir=$(cd $(dirname $0); pwd)
 . ${this_dir}/less-important/util.sh
 
 # if [ $# -ne 2 ]

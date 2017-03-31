@@ -50,7 +50,8 @@ if __name__ == '__main__':
                             ('-avg.wordlist' if config.average else '-word.wordlist') )
     logger.info( 'vocabulary loaded' )
 
-    kbp_gazetteer = gazetteer( config.data_path + '/kbp-gazetteer' )
+    # kbp_gazetteer = gazetteer( config.data_path + '/kbp-gazetteer' )
+    kbp_gazetteer = gazetteer( config.data_path + '/eng-gaz', mode = 'KBP' )
 
     # idx2ner = [ 'PER_NAM', 'PER_NOM', 'ORG_NAM', 'GPE_NAM', 'LOC_NAM', 'FAC_NAM', 'TTL_NAM', 'O'  ]
     idx2ner = [ 'PER_NAM', 'ORG_NAM', 'GPE_NAM', 'LOC_NAM', 'FAC_NAM',
