@@ -1304,7 +1304,10 @@ def PredictionParser( sample_generator, result, ner_max_length,
                     'O' ]  
 
     # sg = SampleGenerator( dataset )
-    fp = open( result, 'rb' )
+    if isinstance(result, str):
+        fp = open( result, 'rb' )
+    else:
+        fp = result
     sg = sample_generator
 
     # @xmb 20160717
@@ -1343,7 +1346,9 @@ def PredictionParser( sample_generator, result, ner_max_length,
                         estimate.add( (i, j, predicted_label ) )
 
         yield s, table, estimate, actual
-    fp.close()
+
+    if isinstance(result, str):
+        fp.close()
 
 
 
@@ -1681,7 +1686,8 @@ def evaluation( prediction_parser, threshold, algorithm,
 
 def distant_supervision_parser( sentence_file, tag_file, 
                                 start = 0, stop = None, step = 1,
-                                mode = 'KBP' ):
+                                mode = 'KBP',
+                                escape_brackets = True ):
     if mode == 'KBP':
         str2idx = {
             '<PER>' : 0, '<ORG>' : 1, '<GPE>' : 2, 
@@ -1696,6 +1702,16 @@ def distant_supervision_parser( sentence_file, tag_file,
             '<GPE>' : 8, '<FAC>' : 8, '<TTL>' : 8,
             '<MISC>' : 8, '<UNSURE>' : 9
         }
+
+    escape = {
+        '(' : '-LRB-',
+        ')' : '-RRB-',
+        '[' : '-LSB-',
+        ']' : '-RSB-',
+        '{' : '-LCB-',
+        '}' : '-RCB-'
+    }
+
 
     with codecs.open( sentence_file, 'rb', 'utf8' ) as sentences, \
          codecs.open( tag_file, 'rb', 'utf8' ) as tags:
@@ -1719,6 +1735,8 @@ def distant_supervision_parser( sentence_file, tag_file,
 
             if to_keep:
                 sent = sentence.split()
+                if escape_brackets:
+                    sent = [ escape.get(w, w) for w in sent ]
                 for b, e in zip( boe, eoe ):
                     # assert 0 <= b < e <= len(sent)
                     if not 0 <= b < e <= len(sent):

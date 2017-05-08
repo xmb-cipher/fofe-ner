@@ -792,7 +792,7 @@ class fofe_mention_net( object ):
 
 
 
-    def train( self, mini_batch ):
+    def train( self, mini_batch, profile = False ):
         """
         Parameters
         ----------
@@ -814,46 +814,62 @@ class fofe_mention_net( object ):
         target = mini_batch
 
         if not self.config.strictly_one_hot:
-            dense_feature[:,-1] = 0  
+            dense_feature[:,-1] = 0
 
-        c = self.session.run(   self.train_step + [ self.xent ],
-                                feed_dict = {   self.lw1_values: l1_values,
-                                                self.lw1_indices: l1_indices,
-                                                self.rw1_values: r1_values,
-                                                self.rw1_indices: r1_indices,
-                                                self.lw2_values: l2_values,
-                                                self.lw2_indices: l2_indices,
-                                                self.rw2_values: r2_values,
-                                                self.rw2_indices: r2_indices,
-                                                self.bow1_indices: bow1i,
-                                                self.bow1_values: numpy.ones( bow1i.shape[0], dtype = numpy.float32 ),
-                                                self.lw3_values: l3_values,
-                                                self.lw3_indices: l3_indices,
-                                                self.rw3_values: r3_values,
-                                                self.rw3_indices: r3_indices,
-                                                self.lw4_values: l4_values,
-                                                self.lw4_indices: l4_indices,
-                                                self.rw4_values: r4_values,
-                                                self.rw4_indices: r4_indices,
-                                                self.bow2_indices: bow2i,
-                                                self.bow2_values: numpy.ones( bow2i.shape[0], dtype = numpy.float32 ),
-                                                self.shape1: (target.shape[0], self.n_word1),
-                                                self.shape2: (target.shape[0], self.n_word2),
-                                                self.lc_fofe: dense_feature[:,:128],
-                                                self.rc_fofe: dense_feature[:,128:256],
-                                                self.li_fofe: dense_feature[:,256:384],
-                                                self.ri_fofe: dense_feature[:,384:512],
-                                                self.ner_cls_match: dense_feature[:,512:],
-                                                self.char_idx: conv_idx,
-                                                self.lbc_values : l5_values,
-                                                self.lbc_indices : l5_indices,
-                                                self.rbc_values : r5_values,
-                                                self.rbc_indices : r5_indices,
-                                                self.shape3 : (target.shape[0], 96 * 96),
-                                                self.label: target,
-                                                self.lr: self.config.learning_rate,
-                                                self.keep_prob: 1 - self.config.drop_rate } )[-1]
+        if profile:
+            options = tf.RunOptions( trace_level = tf.RunOptions.FULL_TRACE )
+            run_metadata = tf.RunMetadata()
+        else:
+            options, run_metadata = None, None
 
+        c = self.session.run(  
+            self.train_step + [ self.xent ],
+            feed_dict = {   self.lw1_values: l1_values,
+                            self.lw1_indices: l1_indices,
+                            self.rw1_values: r1_values,
+                            self.rw1_indices: r1_indices,
+                            self.lw2_values: l2_values,
+                            self.lw2_indices: l2_indices,
+                            self.rw2_values: r2_values,
+                            self.rw2_indices: r2_indices,
+                            self.bow1_indices: bow1i,
+                            self.bow1_values: numpy.ones( bow1i.shape[0], dtype = numpy.float32 ),
+                            self.lw3_values: l3_values,
+                            self.lw3_indices: l3_indices,
+                            self.rw3_values: r3_values,
+                            self.rw3_indices: r3_indices,
+                            self.lw4_values: l4_values,
+                            self.lw4_indices: l4_indices,
+                            self.rw4_values: r4_values,
+                            self.rw4_indices: r4_indices,
+                            self.bow2_indices: bow2i,
+                            self.bow2_values: numpy.ones( bow2i.shape[0], dtype = numpy.float32 ),
+                            self.shape1: (target.shape[0], self.n_word1),
+                            self.shape2: (target.shape[0], self.n_word2),
+                            self.lc_fofe: dense_feature[:,:128],
+                            self.rc_fofe: dense_feature[:,128:256],
+                            self.li_fofe: dense_feature[:,256:384],
+                            self.ri_fofe: dense_feature[:,384:512],
+                            self.ner_cls_match: dense_feature[:,512:],
+                            self.char_idx: conv_idx,
+                            self.lbc_values : l5_values,
+                            self.lbc_indices : l5_indices,
+                            self.rbc_values : r5_values,
+                            self.rbc_indices : r5_indices,
+                            self.shape3 : (target.shape[0], 96 * 96),
+                            self.label: target,
+                            self.lr: self.config.learning_rate,
+                            self.keep_prob: 1 - self.config.drop_rate },
+            options = options, 
+            run_metadata = run_metadata
+        )[-1]
+
+        if profile:
+            tf.contrib.tfprof.model_analyzer.print_model_analysis(
+                self.graph,
+                run_meta = run_metadata,
+                tfprof_options = tf.contrib.tfprof.model_analyzer.PRINT_ALL_TIMING_MEMORY
+            )
 
         return c
 

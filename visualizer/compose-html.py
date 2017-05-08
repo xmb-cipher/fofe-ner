@@ -166,6 +166,10 @@ if __name__ == '__main__':
         width: 96%;
         margin: 32px 16px 32px 16px;
     }
+
+    .doc-id {
+        font-size: 20px
+    }
 </style>
 
 
@@ -254,7 +258,8 @@ var collData = {
 
     for i, x in enumerate( CoNLL2003Doc(args.system, args.gold) ):
         js1 += 'var dataX%d = %s;\n' % (i, str(doc2js(x)))
-       
+        
+        div += "<div class = 'doc-id'>DOCUMENT %05d</div>" % i
         div += "<div id = 'docX-%d', class = 'center'></div>\n" % i
 
         js2 += "        Util.embed('docX-%d', collData, dataX%d, webFontURLs);\n" % (i, i)
