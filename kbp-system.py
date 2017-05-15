@@ -89,6 +89,9 @@ if __name__ == '__main__':
     # experimental
     parser.add_argument( '--n_pattern', type = int, default = 0,
                          help = 'number of patterns in sparse-fofe' )
+    parser.add_argument( '--is_2nd_pass', action = 'store_true', default = False,
+                         help = 'run 2nd pass training when true' )
+    parser.add_argument( '--split', type = str, default = '' )
 
 
     ########################################################################
@@ -113,6 +116,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     logger.info( str(args) + '\n' )
 
+    ################################################################################
+
+    if args.is_2nd_pass:
+        logger.info( 'user-input feature-choice was %d' % args.feature_choice )
+        args.feature_choice &= 2038
+        logger.info( 'feature-choice now is %d' % args.feature_choice )
+
     ########################################################################
 
     from fofe_mention_net import *
@@ -126,29 +136,67 @@ if __name__ == '__main__':
     ########################################################################
 
     # there are 2 sets of vocabulary, case-insensitive and case sensitive
-    # for simplicity, same forgetting factor is used at character level
+    nt = config.n_label_type if config.is_2nd_pass else 0
     if config.language != 'cmn':
-        numericizer1 = vocabulary( config.word_embedding + '-case-insensitive.wordlist', 
-                                   config.char_alpha, False )
-        numericizer2 = vocabulary( config.word_embedding + '-case-sensitive.wordlist', 
-                                   config.char_alpha, True )
+        numericizer1 = vocabulary( 
+            config.word_embedding + '-case-insensitive.wordlist', 
+            config.char_alpha, 
+            False,
+            n_label_type = nt 
+        )
+        numericizer2 = vocabulary( 
+            config.word_embedding + '-case-sensitive.wordlist', 
+            config.char_alpha, 
+            True,
+            n_label_type = nt 
+        )
     else:
-        numericizer1 = chinese_word_vocab( config.word_embedding + '-char.wordlist' )
-        numericizer2 = chinese_word_vocab( config.word_embedding + \
-                            ('-avg.wordlist' if config.average else '-word.wordlist') )
-    
+        numericizer1 = chinese_word_vocab( 
+            config.word_embedding + '-char.wordlist',
+            n_label_type = nt
+        )
+        numericizer2 = chinese_word_vocab( 
+            config.word_embedding + ('-avg.wordlist' if config.average else '-word.wordlist'),
+            n_label_type = nt
+        )
+
     # it's assumed that there are exactly 2 files in 'data_path'
     # namely 'ed-eng-train' and 'ed-eng-eval'
-    kbp_gazetteer = gazetteer( config.data_path + '/%s-gaz' % config.language,
-                               mode = 'KBP' )
+    if args.feature_choice & 256 > 0:
+        kbp_gazetteer = gazetteer( 
+            os.path.join( config.data_path, '%s-gaz' % config.language ),
+            mode = 'KBP' 
+        )
+        logger.info( 'gazetteer loaded' )
+    else:
+        kbp_gazetteer = [ set() for _ in xrange( args.n_label_type ) ]
+        logger.info( 'gazetteer not used' )
 
     # load all KBP training data and 90% KBP test data
-    source = chain( imap( lambda x: x[1],
-                          ifilter( lambda x : x[0] % 10 < 9,
-                                   enumerate( imap( lambda x: x[:4], 
-                                              LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ) ) ) ),
-                    imap( lambda x: x[:4],
-                          LoadED( config.data_path + '/%s-train-parsed' % config.language ) ) ) 
+    source = chain( 
+        imap( 
+            lambda x: x[1],
+            ifilter( 
+                lambda x : x[0] % 10 < 9,
+                enumerate( 
+                    imap(
+                        lambda x: x[:4], 
+                        LoadED( os.path.join(
+                            config.data_path,
+                            '%s-eval-parsed' % config.language 
+                        ) )
+                    ) 
+                ) 
+            )
+        ),
+        imap( 
+            lambda x: x[:4],
+            LoadED( os.path.join( 
+                config.data_path,
+                '%s-train-parsed' % config.language 
+            ) )
+        ) 
+    ) 
 
     # load 90% iflytek data
     if args.iflytek:
@@ -163,7 +211,8 @@ if __name__ == '__main__':
                                numericizer1, numericizer2, gazetteer = kbp_gazetteer, 
                                alpha = config.word_alpha, window = config.n_window, 
                                n_label_type = config.n_label_type,
-                               language = config.language )
+                               language = config.language,
+                               is2ndPass = args.is_2nd_pass )
     logger.info( 'human: ' + str(human) )
     
     # load 10% KBP test data
@@ -185,7 +234,8 @@ if __name__ == '__main__':
                                numericizer1, numericizer2, gazetteer = kbp_gazetteer, 
                                alpha = config.word_alpha, window = config.n_window, 
                                n_label_type = config.n_label_type,
-                               language = config.language )
+                               language = config.language,
+                               is2ndPass = args.is_2nd_pass )
     logger.info( 'valid: ' + str(valid) )
 
     # internal data set is chinese and english only
@@ -198,7 +248,8 @@ if __name__ == '__main__':
                                    numericizer1, numericizer2, gazetteer = kbp_gazetteer, 
                                    alpha = config.word_alpha, window = config.n_window, 
                                    n_label_type = config.n_label_type,
-                                   language = config.language )
+                                   language = config.language,
+                                   is2ndPass = args.is_2nd_pass )
     else:
         test = valid
     logger.info( 'test: ' + str(test) )
@@ -293,8 +344,12 @@ if __name__ == '__main__':
 
             cost, cnt = 0, 0
             for example in valid.mini_batch_multi_thread( 
-                            256 if config.feature_choice & (1 << 9 ) > 0 else 1024, 
-                            False, 1, 1, config.feature_choice ):
+                config.n_batch_size * 2 if config.feature_choice & (1 << 9 ) > 0 else 2048, 
+                shuffle_needed = False, 
+                overlap_rate = 1, 
+                disjoint_rate = 1, 
+                feature_choice = config.feature_choice 
+            ):
 
                 c, pi, pv = mention_net.eval( example )
 
@@ -314,8 +369,12 @@ if __name__ == '__main__':
 
             cost, cnt = 0, 0
             for example in test.mini_batch_multi_thread( 
-                            256 if config.feature_choice & (1 << 9 ) > 0 else 1024, 
-                            False, 1, 1, config.feature_choice ):
+                config.n_batch_size * 2 if config.feature_choice & (1 << 9 ) > 0 else 2048, 
+                shuffle_needed = False, 
+                overlap_rate = 1, 
+                disjoint_rate = 1, 
+                feature_choice = config.feature_choice 
+            ):
 
                 c, pi, pv = mention_net.eval( example )
 
@@ -343,21 +402,43 @@ if __name__ == '__main__':
             best_dev_fb1, best_threshold, best_algorithm = 0, [0.5, 0.5], [1, 1]
 
             if n_epoch >= config.max_iter / 2:
-                source = imap( lambda x: x[1],
-                               ifilter( lambda x : x[0] % 10 >= 9,
-                               enumerate( imap( lambda x: x[:4], 
-                                                LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ) ) ) )
+                source = imap( 
+                    lambda x: x[1],
+                    ifilter( 
+                        lambda x : x[0] % 10 >= 9,
+                        enumerate( 
+                            imap( 
+                                lambda x: x[:4], 
+                                LoadED( os.path.join(
+                                    config.data_path, '%s-eval-parsed' % config.language
+                                ) )
+                            ) 
+                        ) 
+                    ) 
+                )
                 if args.iflytek:
-                    source = chain( source, 
-                                    imap( lambda x: x[1],
-                                          ifilter( lambda x : 90 <= x[0] % 100 < 95,
-                                                   enumerate( imap( lambda x: x[:4], 
-                                                              LoadED( 'iflytek-clean-%s' % config.language ) ) ) ) ) )
+                    source = chain( 
+                        source, 
+                        imap( 
+                            lambda x: x[1],
+                            ifilter( 
+                                lambda x : 90 <= x[0] % 100 < 95,
+                                enumerate( 
+                                    imap( 
+                                        lambda x: x[:4], 
+                                        LoadED( 'iflytek-clean-%s' % config.language ) 
+                                    ) 
+                                ) 
+                            ) 
+                        ) 
+                    )
 
-                pp = [ p for p in PredictionParser( source,
-                                                    valid_predicted_file, 
-                                                    config.n_window,
-                                                    n_label_type = config.n_label_type ) ]
+                pp = list( PredictionParser( 
+                    source,
+                    valid_predicted_file, 
+                    config.n_window,
+                    n_label_type = config.n_label_type
+                ) )
 
                 for algorithm in product( [1, 2], repeat = 2 ):
                     algorithm = list( algorithm )

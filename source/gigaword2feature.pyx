@@ -550,6 +550,7 @@ cdef class processed_sentence:
         cdef int n_word = len(numericizer)
 
         if is2ndPass:
+            # TODO, remove nested mention
             boe = dict(zip(label1st[0], label1st[2]))
             eoe = dict(zip(label1st[1], label1st[2]))
 

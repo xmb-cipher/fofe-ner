@@ -85,6 +85,9 @@ if __name__ == '__main__':
     parser.add_argument( '--average', action = 'store_true', default = False,
                          help = 'word embedding is averaged on number of characters ' + \
                                 'when word level feature is used in Chinese' )
+    # experimental
+    parser.add_argument( '--is_2nd_pass', action = 'store_true', default = False,
+                         help = 'run 2nd pass training when true' )
 
     ########################################################################
 
@@ -109,6 +112,13 @@ if __name__ == '__main__':
 
     ########################################################################
 
+    if args.is_2nd_pass:
+        logger.info( 'user-input feature-choice was %d' % args.feature_choice )
+        args.feature_choice &= 2038
+        logger.info( 'feature-choice now is %d' % args.feature_choice )
+
+    ########################################################################
+
     from fofe_mention_net import *
     config = mention_config( args )
 
@@ -120,49 +130,90 @@ if __name__ == '__main__':
     ########################################################################
 
     # there are 2 sets of vocabulary, case-insensitive and case sensitive
-    # for simplicity, same forgetting factor is used at character level
+    nt = config.n_label_type if config.is_2nd_pass else 0
     if config.language != 'cmn':
-        numericizer1 = vocabulary( config.word_embedding + '-case-insensitive.wordlist', 
-                                   config.char_alpha, False )
-        numericizer2 = vocabulary( config.word_embedding + '-case-sensitive.wordlist', 
-                                   config.char_alpha, True )
+        numericizer1 = vocabulary( 
+            config.word_embedding + '-case-insensitive.wordlist', 
+            config.char_alpha, 
+            False,
+            n_label_type = nt 
+        )
+        numericizer2 = vocabulary( 
+            config.word_embedding + '-case-sensitive.wordlist', 
+            config.char_alpha, 
+            True,
+            n_label_type = nt 
+        )
     else:
-        numericizer1 = chinese_word_vocab( config.word_embedding + '-char.wordlist' )
-        numericizer2 = chinese_word_vocab( config.word_embedding + \
-                            ('-avg.wordlist' if config.average else '-word.wordlist') )
+        numericizer1 = chinese_word_vocab( 
+            config.word_embedding + '-char.wordlist',
+            n_label_type = nt
+        )
+        numericizer2 = chinese_word_vocab( 
+            config.word_embedding + ('-avg.wordlist' if config.average else '-word.wordlist'),
+            n_label_type = nt
+        )
     
     # it's assumed that there are exactly 2 files in 'data_path'
     # namely 'ed-eng-train' and 'ed-eng-eval'
-    kbp_gazetteer = gazetteer( config.data_path + '/kbp-gazetteer', mode = 'KBP' )
+    kbp_gazetteer = gazetteer( 
+        os.path.join( config.data_path, 'kbp-gazetteer' ), 
+        mode = 'KBP' 
+    )
 
-    source = imap( lambda x: x[:4],
-                    LoadED( config.data_path + '/%s-train-parsed' % config.language ) ) 
+    source = imap( 
+        lambda x: x[:4],
+        LoadED( config.data_path + '/%s-train-parsed' % config.language ) 
+    ) 
 
     if args.iflytek:
-        source = chain( source,
-                        imap( lambda x: x[:4], 
-                              LoadED( 'iflytek-clean-%s' % config.language ) ) )
-    human = batch_constructor( source,
-                               numericizer1, numericizer2, gazetteer = kbp_gazetteer, 
-                               alpha = config.word_alpha, window = config.n_window, 
-                               n_label_type = config.n_label_type,
-                               language = config.language )
+        source = chain( 
+            source,
+            imap( lambda x: x[:4], 
+                  LoadED( 'iflytek-clean-%s' % config.language ) 
+            ) 
+        )
+    human = batch_constructor( 
+        source,
+        numericizer1, 
+        numericizer2, 
+        gazetteer = kbp_gazetteer, 
+        alpha = config.word_alpha, 
+        window = config.n_window, 
+        n_label_type = config.n_label_type,
+        language = config.language,
+        is2ndPass = args.is_2nd_pass 
+    )
     logger.info( 'human: ' + str(human) )
     
-    valid = batch_constructor( # KBP2015(  data_path + '/ed-eng-eval' ), 
-                               imap( lambda x: x[:4], LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ), 
-                               numericizer1, numericizer2, gazetteer = kbp_gazetteer, 
-                               alpha = config.word_alpha, window = config.n_window, 
-                               n_label_type = config.n_label_type,
-                               language = config.language )
+    valid = batch_constructor( 
+        imap( lambda x: x[:4], 
+              LoadED( config.data_path + '/%s-eval-parsed' % config.language ) 
+        ), 
+        numericizer1, 
+        numericizer2, 
+        gazetteer = kbp_gazetteer, 
+        alpha = config.word_alpha, 
+        window = config.n_window, 
+        n_label_type = config.n_label_type,
+        language = config.language,
+        is2ndPass = args.is_2nd_pass 
+    )
     logger.info( 'valid: ' + str(valid) )
     
-    test  = batch_constructor( # KBP2015(  data_path + '/ed-eng-train' ), 
-                               imap( lambda x: x[:4], LoadED( config.data_path + '/%s-train-parsed' % config.language ) ),
-                               numericizer1, numericizer2, gazetteer = kbp_gazetteer, 
-                               alpha = config.word_alpha, window = config.n_window, 
-                               n_label_type = config.n_label_type,
-                               language = config.language )
+    test = batch_constructor( 
+        imap( lambda x: x[:4], 
+              LoadED( config.data_path + '/%s-train-parsed' % config.language ) 
+        ),
+        numericizer1, 
+        numericizer2, 
+        gazetteer = kbp_gazetteer, 
+        alpha = config.word_alpha, 
+        window = config.n_window, 
+        n_label_type = config.n_label_type,
+        language = config.language,
+        is2ndPass = args.is_2nd_pass 
+    )
     logger.info( 'test: ' + str(test) )
 
     logger.info( 'data set loaded' )
@@ -173,12 +224,13 @@ if __name__ == '__main__':
     prev_cost, decay_started = 2054, False
 
     infinite_human = human.infinite_mini_batch_multi_thread( 
-                                    config.n_batch_size, 
-                                    True, 
-                                    config.overlap_rate, 
-                                    config.disjoint_rate, 
-                                    config.feature_choice, 
-                                    True )
+        config.n_batch_size, 
+        True, 
+        config.overlap_rate, 
+        config.disjoint_rate, 
+        config.feature_choice, 
+        True 
+    )
 
     for n_epoch in xrange( config.max_iter ):
 
@@ -196,15 +248,23 @@ if __name__ == '__main__':
 
         if config.enable_distant_supervision:
             dsp = distant_supervision_parser( 
-                    '/local/scratch/mingbin/distant-supervision/sentences-v2',
-                    '/local/scratch/mingbin/distant-supervision/joint-labels-v2',
-                    n_epoch, None, 128 )
-            train = batch_constructor( dsp, numericizer1, numericizer2, 
-                                       gazetteer = kbp_gazetteer, 
-                                       alpha = config.word_alpha, 
-                                       window = config.n_window, 
-                                       n_label_type = config.n_label_type,
-                                       language = config.language )
+                '/local/scratch/mingbin/distant-supervision/sentences-v2',
+                '/local/scratch/mingbin/distant-supervision/joint-labels-v2',
+                n_epoch, 
+                None, 
+                128 
+            )
+            train = batch_constructor( 
+                dsp, 
+                numericizer1, 
+                numericizer2, 
+                gazetteer = kbp_gazetteer, 
+                alpha = config.word_alpha, 
+                window = config.n_window, 
+                n_label_type = config.n_label_type,
+                language = config.language,
+                is2ndPass = args.is_2nd_pass
+            )
             logger.info( 'train: ' + str(train) )
         else:
             train = human
@@ -218,12 +278,16 @@ if __name__ == '__main__':
 
         cost, cnt = 0, 0
         
-        for x in ifilter( lambda x : x[-1].shape[0] == config.n_batch_size,
-                          train.mini_batch_multi_thread( config.n_batch_size, 
-                                                         True, 
-                                                         config.overlap_rate, 
-                                                         config.disjoint_rate, 
-                                                         config.feature_choice ) ):
+        for x in ifilter( 
+            lambda x : x[-1].shape[0] == config.n_batch_size,
+            train.mini_batch_multi_thread( 
+                config.n_batch_size, 
+                True, 
+                config.overlap_rate, 
+                config.disjoint_rate, 
+                config.feature_choice 
+            ) 
+        ):
             if config.enable_distant_supervision:
                 x = [ x, infinite_human.next() ]
                 if choice( [ True, False ] ):

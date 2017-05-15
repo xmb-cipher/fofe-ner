@@ -159,7 +159,10 @@ if __name__ == '__main__':
                                config.char_alpha, True,
                                n_label_type = nt )
 
-    conll2003_gazetteer = gazetteer( args.data_path + '/ner-lst' )
+    if args.feature_choice & 256 > 0:
+        conll2003_gazetteer = gazetteer( args.data_path + '/ner-lst' )
+    else:
+        conll2003_gazetteer = [ set() for _ in xrange( args.n_label_type ) ]
 
     train = batch_constructor( CoNLL2003( args.data_path + '/eng.train' ), 
                                numericizer1, numericizer2, 
@@ -218,7 +221,8 @@ if __name__ == '__main__':
                                        numericizer1, numericizer2, 
                                        gazetteer = conll2003_gazetteer, 
                                        alpha = config.word_alpha, 
-                                       window = config.n_window )
+                                       window = config.n_window,
+                                       is2ndPass = args.is_2nd_pass )
             logger.info( 'train: ' + str(train) )
 
         pbar = tqdm( total = len(train.positive) + 
@@ -324,7 +328,7 @@ if __name__ == '__main__':
 
         if decode_test:
 
-            pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testa' ), 
+            pp = [ p for p in PredictionParser( CoNLL2003( config.data_path + '/eng.testa' ), 
                                                 valid_file, 
                                                 config.n_window ) ]
 
@@ -361,14 +365,14 @@ if __name__ == '__main__':
             logger.info( 'test, global threshold\n' + out )
             test_fb1 = float(out.split('\n')[1].split()[-1])
         else:
-            pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testa' ), 
+            pp = [ p for p in PredictionParser( CoNLL2003( config.data_path + '/eng.testa' ), 
                                                 valid_file, 
                                                 config.n_window ) ]
             _, _, test_fb1, info = evaluation( pp, best_threshold, best_algorithm, True )
             logger.info ( 'validation:\n' + info )
 
             if decode_test:
-                pp = [ p for p in PredictionParser( SampleGenerator( config.data_path + '/eng.testb' ), 
+                pp = [ p for p in PredictionParser( CoNLL2003( config.data_path + '/eng.testb' ), 
                                                     test_file, 
                                                     config.n_window ) ]
                 _, _, _, out = evaluation( pp, best_threshold, best_algorithm, True )
