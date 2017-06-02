@@ -6,9 +6,9 @@ export LANG=C
 # the rest are TitanX
 if [ `hostname` == "image" ] || [ `hostname` == "voice" ] || [ `hostname` == "audio" ]
 then
-	export CUDA_HOME="/eecs/local/pkg/cuda-8.0.44"
+    export CUDA_HOME="/eecs/local/pkg/cuda-8.0.44"
 else
-	export CUDA_HOME="/eecs/local/pkg/cuda"
+    export CUDA_HOME="/eecs/local/pkg/cuda"
 fi
 
 export PATH=${CUDA_HOME}/bin:${PATH}

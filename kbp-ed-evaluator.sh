@@ -9,9 +9,9 @@ source ${THIS_DIR}/scripts/utils.sh
 if [ $# -ne 3 ]
 then
 	CRITICAL "Incorrect command-line argument(s)!"
-	printf "Usage: $0 <model> <source> <gold> \n"
-	printf "    <model>  : a trained model returned by kbp-system.py \n"
-	printf "    <source> : directory containing labelless files returned by kbp-xml-parser.py \n"
+	printf "Usage: $0 <model> <source> <gold> \n" 1>&2
+	printf "    <model>  : a trained model returned by kbp-system.py \n" 1>&2
+	printf "    <source> : directory containing labelless files returned by kbp-xml-parser.py \n" 1>&2
 	exit 1
 fi
 

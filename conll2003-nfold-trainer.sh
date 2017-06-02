@@ -7,7 +7,8 @@
 
 set -e
 this_dir=$(cd $(dirname $0); pwd)
-. ${this_dir}/less-important/util.sh
+. ${this_dir}/scripts/utils.sh
+export PYTHONPATH="${this_dir}"
 
 # if [ $# -ne 2 ]
 # then
@@ -45,7 +46,7 @@ do
 	ln -s ${dir}/ner-lst ${dst}/ner-lst
 done
 
-${this_dir}/conll2003-nfold-split.py ${data_path} ${dir}
+${this_dir}/scripts/conll2003-nfold-split.py ${data_path} ${dir}
 INFO "Here's the file hierarchy"
 tree ${dir} -L 2
 
@@ -91,7 +92,7 @@ done
 
 INFO "evaluating... "
 
-${this_dir}/conll2003-nfold-eval.py \
+${this_dir}/scripts/conll2003-nfold-eval.py \
 	${extra_opt} \
 	conll2003-model/${model:-split} \
 	${dir}/eng.testb \

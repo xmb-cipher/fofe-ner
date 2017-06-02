@@ -24,8 +24,9 @@ if __name__ == '__main__':
     ########## load gazetteer ##########
 
     gazetteer_path = os.path.join( os.path.dirname( __file__ ),
-                                   'conll2003-model', 'ner-list' )
+                                   '../conll2003-model', 'ner-list' )
     conll2003_gazetteer = gazetteer( gazetteer_path )
+    # conll2003_gazetteer = [ set() for _ in xrange(10) ]
 
     ########## compute probability ##########
 
@@ -36,8 +37,9 @@ if __name__ == '__main__':
         # basename = os.path.join( os.path.dirname(__file__),
         #                          'conll2003-model', 'split-%d' % i )
         basename = '%s-%d' % (args.basename, i)
+        config = mention_config()
         with open( '%s.config' % basename, 'rb' ) as fp:
-            config = cPickle.load( fp )
+             config.__dict__.update( cPickle.load( fp ).__dict__ )
         logger.info( config.__dict__ )
         logger.info( 'config of split-%d loaded' % i )
 
@@ -46,12 +48,12 @@ if __name__ == '__main__':
 
         nt = config.n_label_type if config.is_2nd_pass else 0
         numericizer1 = vocabulary( os.path.join( os.path.dirname(__file__),
-                                                 'conll2003-model',
+                                                 '../conll2003-model',
                                                  'reuters256-case-insensitive.wordlist' ),
                                    config.char_alpha, False,
                                    n_label_type = nt )
         numericizer2 = vocabulary( os.path.join( os.path.dirname(__file__),
-                                                 'conll2003-model',
+                                                 '../conll2003-model',
                                                  'reuters256-case-sensitive.wordlist' ),
                                    config.char_alpha, True,
                                    n_label_type = nt )

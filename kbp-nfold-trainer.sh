@@ -3,12 +3,11 @@
 # Instead of taking command line arguments, I put predefined hyper parameters here
 # The hyper parameters should be fine-tuned in a non-cross-validation setting.
 
-export CUDA_VISIBLE_DEVICES=0=
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-""}
 
 set -e
-this_script=`which $0`
-this_dir=`dirname ${this_script}`
-. ${this_dir}/less-important/util.sh
+this_dir=$(cd $(dirname $0); pwd)
+. ${this_dir}/scripts/utils.sh
 
 if [ $# -lt 4 ] || [ $# -gt 5 ]
 then
@@ -29,7 +28,7 @@ embedding_path=$1 ; shift
 train_path=$1 ; shift
 eval_path=$1 ; shift
 language=$1 ; shift
-[ $# -eq 4 ] && iflytek_path=$1 &&
+[ $# -eq 5 ] && iflytek_path=$1 &&
 	INFO "iflytek data set is used in training"
 
 
@@ -39,14 +38,15 @@ INFO "intermediate files are put in ${dir}"
 
 
 cp -f -R ${train_path} ${dir}/kbp
-cp -f ${train_path}/../kbp-gazetteer ${dir}/kbp-gazetteer
-# head -1024 ${train_path}/../kbp-gazetteer > ${dir}/kbp-gazetteer
+cp -f ${train_path}/../kbp-gaz.txt ${dir}/kbp-gaz.txt
 train_path=${dir}/kbp
 
 cp -f -R ${eval_path} ${dir}/eval
 eval_path=${dir}/eval
 
-[ $# -eq 4 ] && cp -f -R ${iflytek_path} ${dir}/iflytek && iflytek_path=${dir}/iflytek
+[ $# -eq 5 ] && \
+	cp -f -R ${iflytek_path} ${dir}/iflytek && \
+	iflytek_path=${dir}/iflytek
 
 
 for i in `seq 0 4`
@@ -55,7 +55,7 @@ do
 	mkdir -p ${dst}
 	mkdir -p ${dst}/${language}-train-parsed
 	mkdir -p ${dst}/${language}-eval-parsed
-	ln -s ${dir}/kbp-gazetteer ${dst}/kbp-gazetteer
+	ln -s ${dir}/kbp-gaz.txt ${dst}/kbp-gaz.txt
 done
 INFO "folders are created"
 
@@ -114,14 +114,13 @@ do
 		--learning_rate 0.128 \
 		--momentum 0.9 \
 		--max_iter 256 \
-		--feature_choice 639 \
-		--overlap_rate 0.36 \
-		--disjoint_rate 0.09 \
+		--feature_choice 1023 \
 		--dropout \
 		--char_alpha 0.8 \
 		--word_alpha 0.5 \
 		--language ${language} \
-		--model "kbp-result/kbp-split-${i}"
+		--model "kbp-result/kbp-split-${i}" \
+		--buffer_dir ${dir}
 done
 
 

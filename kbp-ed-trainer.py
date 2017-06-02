@@ -11,7 +11,7 @@ Copyright (c) 2016 iNCML (author: Mingbin Xu)
 License: MIT License (see ../LICENSE)
 """
 
-import argparse, logging, time
+import argparse, logging, time, cPickle
 from itertools import product, chain
 
 
@@ -85,6 +85,8 @@ if __name__ == '__main__':
     parser.add_argument( '--average', action = 'store_true', default = False,
                          help = 'word embedding is averaged on number of characters ' + \
                                 'when word level feature is used in Chinese' )
+    parser.add_argument( '--buffer_dir', type = str, default = './' )
+
     # experimental
     parser.add_argument( '--is_2nd_pass', action = 'store_true', default = False,
                          help = 'run 2nd pass training when true' )
@@ -156,10 +158,8 @@ if __name__ == '__main__':
     
     # it's assumed that there are exactly 2 files in 'data_path'
     # namely 'ed-eng-train' and 'ed-eng-eval'
-    kbp_gazetteer = gazetteer( 
-        os.path.join( config.data_path, 'kbp-gazetteer' ), 
-        mode = 'KBP' 
-    )
+    txt_path = os.path.join( config.data_path, 'kbp-gaz.txt' )
+    kbp_gazetteer = gazetteer( txt_path, mode = 'KBP' )
 
     source = imap( 
         lambda x: x[:4],
@@ -234,11 +234,13 @@ if __name__ == '__main__':
 
     for n_epoch in xrange( config.max_iter ):
 
-        if not os.path.exists( 'kbp-result' ):
-            os.makedirs( 'kbp-result' )
+        valid_predicted_file = os.path.join(
+            args.buffer_dir, 'kbp-valid.predicted'
+        )
+        test_predicted_file = os.path.join(
+            args.buffer_dir, 'kbp-test.predicted'
+        )
 
-        valid_predicted_file = 'kbp-result/kbp-valid-%s.predicted' % args.model 
-        test_predicted_file = 'kbp-result/kbp-test-%s.predicted' % args.model
         valid_predicted = open( valid_predicted_file, 'wb' )
         test_predicted = open( test_predicted_file, 'wb' )
 
