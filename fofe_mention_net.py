@@ -94,8 +94,11 @@ class mention_config( object ):
         if args is not None:
             self.__dict__.update( args.__dict__ )
 
-        self.kernel_depth = [ int(d) for d in self.kernel_depth.split(',') ]
-        self.kernel_height = [ int(h) for h in self.kernel_height.split(',') ]
+        if isinstance(self.kernel_depth, str):
+            self.kernel_depth = [ int(d) for d in self.kernel_depth.split(',') ]
+
+        if isinstance(self.kernel_height, str):
+            self.kernel_height = [ int(h) for h in self.kernel_height.split(',') ]
         
         # these parameters are not decided by the input to the program
         # I put some placeholders here; they will be eventually modified

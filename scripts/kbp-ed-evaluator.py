@@ -29,9 +29,10 @@ if __name__ == '__main__':
     logger.info( str(args) + '\n' )
 
     from fofe_mention_net import *
+    config = mention_config()
 
     with open( args.basename + '.config', 'rb' ) as fp:
-        config = cPickle.load( fp )
+        config.__dict__.update( cPickle.load( fp ).__dict__ )
     logger.info( config.__dict__ )
     logger.info( 'configuration loaded' )
 
@@ -40,80 +41,25 @@ if __name__ == '__main__':
     logger.info( 'model loaded' )
 
     if config.language != 'cmn':
-        numericizer1 = vocabulary( config.word_embedding + '-case-insensitive.wordlist', 
+        numericizer1 = vocabulary( args.basename + '-case-insensitive.wordlist', 
                                    config.char_alpha, False )
-        numericizer2 = vocabulary( config.word_embedding + '-case-sensitive.wordlist', 
+        numericizer2 = vocabulary( args.basename + '-case-sensitive.wordlist', 
                                    config.char_alpha, True )
     else:
-        numericizer1 = chinese_word_vocab( config.word_embedding + '-char.wordlist' )
-        numericizer2 = chinese_word_vocab( config.word_embedding + \
+        numericizer1 = chinese_word_vocab( args.basename + '-char.wordlist' )
+        numericizer2 = chinese_word_vocab( args.basename + \
                             ('-avg.wordlist' if config.average else '-word.wordlist') )
     logger.info( 'vocabulary loaded' )
 
     # kbp_gazetteer = gazetteer( config.data_path + '/kbp-gazetteer' )
-    kbp_gazetteer = gazetteer( config.data_path + '/eng-gaz', mode = 'KBP' )
+    kbp_gazetteer = gazetteer( args.basename + '.gaz', mode = 'KBP' )
+    # kbp_gazetteer = [ set() for _ in xrange( config.n_label_type ) ]
 
     # idx2ner = [ 'PER_NAM', 'PER_NOM', 'ORG_NAM', 'GPE_NAM', 'LOC_NAM', 'FAC_NAM', 'TTL_NAM', 'O'  ]
     idx2ner = [ 'PER_NAM', 'ORG_NAM', 'GPE_NAM', 'LOC_NAM', 'FAC_NAM',
                 'PER_NOM', 'ORG_NOM', 'GPE_NOM', 'LOC_NOM', 'FAC_NOM',
                 'O' ]  
 
-    # ==========================================================================================
-    # go through validation set to see if we load the correct file
-
-    # load 10% KBP test data
-    def __LoadValidation():
-        source = imap( lambda x: x[1],
-                       ifilter( lambda x : x[0] % 10 >= 9,
-                       enumerate( imap( lambda x: x[:4], 
-                                        LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ) ) ) )
-        # load 5% iflytek data
-        if config.language != 'spa':
-            source = chain( source, 
-                            imap( lambda x: x[1],
-                                  ifilter( lambda x : 90 <= x[0] % 100 < 95,
-                                           enumerate( imap( lambda x: x[:4], 
-                                                      LoadED( 'iflytek-clean-%s' % config.language ) ) ) ) ) )
-        return source
-
-    # istantiate a batch constructor
-    valid = batch_constructor( __LoadValidation(),
-                               numericizer1, numericizer2, gazetteer = kbp_gazetteer, 
-                               alpha = config.word_alpha, window = config.n_window, 
-                               n_label_type = config.n_label_type,
-                               language = config.language )
-
-    logger.info( 'valid: ' + str(valid) )
-
-
-    # go through validation set
-    with open( args.buffer, 'wb' ) as valid_predicted:
-        cost, cnt = 0, 0
-        for example in valid.mini_batch_multi_thread( 
-                        256 if config.feature_choice & (1 << 9 ) > 0 else 1024, 
-                        False, 1, 1, config.feature_choice ):
-
-            c, pi, pv = mention_net.eval( example )
-
-            cost += c * example[-1].shape[0]
-            cnt += example[-1].shape[0]
-            for expected, estimate, probability in zip( example[-1], pi, pv ):
-                print >> valid_predicted, '%d  %d  %s' % \
-                        (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
-
-        valid_cost = cost / cnt 
-    logger.info( 'validation set iterated' )
-
-
-    pp = [ p for p in PredictionParser( __LoadValidation(),
-                                        args.buffer, 
-                                        config.n_window,
-                                        n_label_type = config.n_label_type ) ]
-
-    _, _, best_dev_fb1, info = evaluation( pp, config.threshold, config.algorithm, True, 
-                                            n_label_type = config.n_label_type,
-                                            decoder_callback = config.customized_threshold )
-    logger.info( '%s\n%s' % ('validation', info) ) 
 
     # ==========================================================================================
 
