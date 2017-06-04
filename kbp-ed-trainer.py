@@ -90,14 +90,28 @@ if __name__ == '__main__':
     # experimental
     parser.add_argument( '--is_2nd_pass', action = 'store_true', default = False,
                          help = 'run 2nd pass training when true' )
+    parser.add_argument( '--skip_test', action = 'store_true', default = False,
+                         help = 'skip test set when set' )
+    parser.add_argument( '--logfile', type = str, default = None )
+
+    ########################################################################
+
+    args = parser.parse_args()
 
     ########################################################################
 
     # set a logging file at DEBUG level, TODO: windows doesn't allow ":" appear in a file name
-    logging.basicConfig( format = '%(asctime)s : %(levelname)s : %(message)s', 
-                         level= logging.DEBUG,
-                         filename = ('log/kbp ' + time.ctime() + '.log').replace(' ', '-'), 
-                         filemode = 'w' )
+    if args.logfile is None:
+        logfile = ('log/kbp ' + time.ctime() + '.log').replace(' ', '-')
+    else:
+        logfile = args.logfile
+        
+    logging.basicConfig( 
+        format = '%(asctime)s : %(levelname)s : %(message)s', 
+        level= logging.DEBUG,
+        filename = logfile, 
+        filemode = 'w' 
+    )
 
     # direct the INFO-level logging to the screen
     console = logging.StreamHandler()
@@ -109,7 +123,6 @@ if __name__ == '__main__':
 
     ########################################################################
 
-    args = parser.parse_args()
     logger.info( str(args) + '\n' )
 
     ########################################################################
@@ -158,8 +171,15 @@ if __name__ == '__main__':
     
     # it's assumed that there are exactly 2 files in 'data_path'
     # namely 'ed-eng-train' and 'ed-eng-eval'
-    txt_path = os.path.join( config.data_path, 'kbp-gaz.txt' )
-    kbp_gazetteer = gazetteer( txt_path, mode = 'KBP' )
+    try:
+        logger.info( 'Loading compressed gazetteer' )
+        pkl_path = os.path.join( config.data_path, 'kbp-gaz.pkl' )
+        with open( pkl_path, 'rb' ) as fp:
+            kbp_gazetteer = cPickle.load( fp )
+    except:
+        logger.info( 'loading text gazetteer' )
+        txt_path = os.path.join( config.data_path, 'kbp-gaz.txt' )
+        kbp_gazetteer = gazetteer( txt_path, mode = 'KBP' )
 
     source = imap( 
         lambda x: x[:4],
@@ -237,12 +257,15 @@ if __name__ == '__main__':
         valid_predicted_file = os.path.join(
             args.buffer_dir, 'kbp-valid.predicted'
         )
+
         test_predicted_file = os.path.join(
             args.buffer_dir, 'kbp-test.predicted'
         )
 
         valid_predicted = open( valid_predicted_file, 'wb' )
-        test_predicted = open( test_predicted_file, 'wb' )
+
+        if not args.skip_test:
+            test_predicted = open( test_predicted_file, 'wb' )
 
         #############################################
         ########## go through training set ##########
@@ -338,21 +361,22 @@ if __name__ == '__main__':
             ########## go through test set ##########
             #########################################
 
-            cost, cnt = 0, 0
-            for example in test.mini_batch_multi_thread( 
-                            256 if config.feature_choice & (1 << 9 ) > 0 else 1024, 
-                            False, 1, 1, config.feature_choice ):
+            if not args.skip_test:
+                cost, cnt = 0, 0
+                for example in test.mini_batch_multi_thread( 
+                                256 if config.feature_choice & (1 << 9 ) > 0 else 1024, 
+                                False, 1, 1, config.feature_choice ):
 
-                c, pi, pv = mention_net.eval( example )
+                    c, pi, pv = mention_net.eval( example )
 
-                cost += c * example[-1].shape[0]
-                cnt += example[-1].shape[0]
-                for expected, estimate, probability in zip( example[-1], pi, pv ):
-                    print >> test_predicted, '%d  %d  %s' % \
-                            (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
+                    cost += c * example[-1].shape[0]
+                    cnt += example[-1].shape[0]
+                    for expected, estimate, probability in zip( example[-1], pi, pv ):
+                        print >> test_predicted, '%d  %d  %s' % \
+                                (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
 
-            test_cost = cost / cnt 
-            test_predicted.close()
+                test_cost = cost / cnt 
+                test_predicted.close()
 
             ###################################################################################
             ########## exhaustively iterate 3 decodding algrithms with 0.x cut-off ############
@@ -402,14 +426,15 @@ if __name__ == '__main__':
                                                       n_label_type = config.n_label_type )
             logger.info( '%s\n%s' % ('validation', info) ) 
 
-            precision, recall, f1, info = evaluation( PredictionParser( # KBP2015(  data_path + '/ed-eng-train' ),
-                                                                      imap( lambda x: x[:4], LoadED( config.data_path + '/%s-train-parsed' % config.language ) ),
-                                                                      test_predicted_file, config.n_window,
-                                                                      n_label_type = config.n_label_type ), 
-                                                      best_threshold, best_algorithm, True,
-                                                      analysis = None, #analysis,
-                                                      n_label_type = config.n_label_type )
-            logger.info( '%s\n%s' % ('test', info) ) 
+            if not args.skip_test:
+                precision, recall, f1, info = evaluation( PredictionParser( # KBP2015(  data_path + '/ed-eng-train' ),
+                                                                          imap( lambda x: x[:4], LoadED( config.data_path + '/%s-train-parsed' % config.language ) ),
+                                                                          test_predicted_file, config.n_window,
+                                                                          n_label_type = config.n_label_type ), 
+                                                          best_threshold, best_algorithm, True,
+                                                          analysis = None, #analysis,
+                                                          n_label_type = config.n_label_type )
+                logger.info( '%s\n%s' % ('test', info) ) 
 
         mention_net.config.learning_rate *= 0.5 ** ((4./ config.max_iter) if config.drop_rate > 0 else (1./ 2))
         mention_net.config.drop_rate *= 0.5 ** (2./ config.max_iter)

@@ -16,7 +16,7 @@ if __name__ == '__main__':
     parser.add_argument( 'model_dir', type = str,
                          help = 'e.g. kbp-result' )
     parser.add_argument( 'gazetteer', type = str, 
-                         help = 'e.g. processed-data/kbp-gazetteer' )
+                         help = 'e.g. processed-data/kbp-gaz.pkl' )
     parser.add_argument( 'embedding', type = str,
                          help = 'e.g. word2vec/gw256' )
     parser.add_argument( 'combined_out', type = str )
@@ -28,7 +28,11 @@ if __name__ == '__main__':
 
     ########## load gazetteer ##########
 
-    kbp_gazetteer = gazetteer( args.gazetteer, mode = 'KBP' )
+    try:
+        with open( args.gazetteer, 'rb' ) as fp:
+            kbp_gazetteer = cPickle.load( fp )
+    except:
+        kbp_gazetteer = [ set() for _ in xrange(16) ]
 
     ########## compute probability ##########
 

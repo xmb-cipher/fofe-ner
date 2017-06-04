@@ -1,35 +1,20 @@
 #!/bin/bash
 
-# Instead of taking command line arguments, I put predefined hyper parameters here
-# The hyper parameters should be fine-tuned in a non-cross-validation setting.
-
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-""}
-
 set -e
 this_dir=$(cd $(dirname $0); pwd)
-. ${this_dir}/scripts/utils.sh
+source ${this_dir}/path.sh
+source ${this_dir}/config.sh
 
-if [ $# -lt 4 ] || [ $# -gt 5 ]
-then
-	printf ${KRED}
-	printf "usage: %s <embedding-path> <kbp-path> <language> [iflytek-path]\n" $0 1>&2
-	printf "    <embedding-path> : basename of word embedding, e.g. word2vec/gw256 \n" 1>&2
-	printf "    <kbp-train-path> : directory containing parsed labeled data, e.g. processed-data/eng-train-parsed\n" 1>&2
-	printf "    <kbp-eval-path>  : directory containing parsed labeled data, e.g. processed-data/eng-eval-parsed\n" 1>&2
-	printf "    <languge>        : either eng, cmn or spa\n" 1>&2
-	printf "    [iflytek-path]   : directory containing parsed iflytek data\n" 1>&2
-	printf ${KNRM}
-	exit 1
-fi
 
-INFO "$@"
+embedding_path=${KBP_NFOLD_EMBED}
+train_path=${KBP_NFOLD_TRAIN}
+eval_path=${KBP_NFOLD_EVAL}
+language=${KBP_NFOLD_LANG}
 
-embedding_path=$1 ; shift
-train_path=$1 ; shift
-eval_path=$1 ; shift
-language=$1 ; shift
-[ $# -eq 5 ] && iflytek_path=$1 &&
-	INFO "iflytek data set is used in training"
+INFO "embedding-path : ${embedding-path}"
+INFO "train-path     : ${train_path}"
+INFO "eval-path      : ${eval_path}"
+INFO "language       : ${language}"
 
 
 dir=`mktemp -d`
@@ -38,24 +23,20 @@ INFO "intermediate files are put in ${dir}"
 
 
 cp -f -R ${train_path} ${dir}/kbp
-cp -f ${train_path}/../kbp-gaz.txt ${dir}/kbp-gaz.txt
+cp -f ${train_path}/../kbp-gaz.pkl ${dir}/kbp-gaz.pkl
 train_path=${dir}/kbp
 
 cp -f -R ${eval_path} ${dir}/eval
 eval_path=${dir}/eval
 
-[ $# -eq 5 ] && \
-	cp -f -R ${iflytek_path} ${dir}/iflytek && \
-	iflytek_path=${dir}/iflytek
-
 
 for i in `seq 0 4`
 do
-	dst="${dir}/split-${i}"
-	mkdir -p ${dst}
-	mkdir -p ${dst}/${language}-train-parsed
-	mkdir -p ${dst}/${language}-eval-parsed
-	ln -s ${dir}/kbp-gaz.txt ${dst}/kbp-gaz.txt
+    dst="${dir}/split-${i}"
+    mkdir -p ${dst}
+    mkdir -p ${dst}/${language}-train-parsed
+    mkdir -p ${dst}/${language}-eval-parsed
+    ln -s ${dir}/kbp-gaz.pkl ${dst}/kbp-gaz.pkl
 done
 INFO "folders are created"
 
@@ -63,73 +44,78 @@ INFO "folders are created"
 
 for f in `find ${train_path} -type f`
 do
-	# this line gives non-zero return, set -e complains
-	# x=`expr ${RANDOM} % 5`
-	x=`python -c "import random; print random.choice([0, 1, 2, 3, 4])"`
+    # this line gives non-zero return, set -e complains
+    # x=`expr ${RANDOM} % 5`
+    x=`python -c "import random; print random.choice([0, 1, 2, 3, 4])"`
 
-	for i in `seq 0 4`
-	do
-		if [ ${x} -eq ${i} ]
-		then
-			ln -s ${f} ${dir}/split-${i}/${language}-eval-parsed/`basename ${f}`
-		else
-			ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/`basename ${f}`
-		fi
-	done
+    for i in `seq 0 4`
+    do
+        if [ ${x} -eq ${i} ]
+        then
+            ln -s ${f} ${dir}/split-${i}/${language}-eval-parsed/`basename ${f}`
+        else
+            ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/`basename ${f}`
+        fi
+    done
 done
 INFO "kpb-data is processed"
 
 
 if [ $# -eq 4 ]
 then
-	for f in `find ${iflytek_path} -type f`
-	do
-		next=`expr ${RANDOM} % 5`
-		for i in `seq 0 4`
-		do
-			if [ ${next} -eq ${i} ]
-			then
-				ln -s ${f} ${dir}/split-${i}/${language}-eval-parsed/`basename ${f}`
-			else
-				ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/`basename ${f}`
-			fi
-		done
-	done
-	INFO "iflytek-data is processed"
+    for f in `find ${iflytek_path} -type f`
+    do
+        next=`expr ${RANDOM} % 5`
+        for i in `seq 0 4`
+        do
+            if [ ${next} -eq ${i} ]
+            then
+                ln -s ${f} ${dir}/split-${i}/${language}-eval-parsed/`basename ${f}`
+            else
+                ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/`basename ${f}`
+            fi
+        done
+    done
+    INFO "iflytek-data is processed"
 fi
 
-
 INFO "training ... "
-for i in `seq 0 4`
-do
-	INFO ""
-	INFO "training split-${i}"
-	INFO ""
 
-	${this_dir}/kbp-ed-trainer.py \
-		${embedding_path} \
-		${dir}/split-${i} \
-		--layer_size 512,512,512 \
-		--n_batch_size 512 \
-		--learning_rate 0.128 \
-		--momentum 0.9 \
-		--max_iter 256 \
-		--feature_choice 1023 \
-		--dropout \
-		--char_alpha 0.8 \
-		--word_alpha 0.5 \
-		--language ${language} \
-		--model "kbp-result/kbp-split-${i}" \
-		--buffer_dir ${dir}
-done
+PROCESSED_DATA=$(for i in $(seq 0 4); do printf "${dir}/split-${i} "; done)
+MODEL=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/kbp-split-${j} "; done)
+LOG_FILE=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/kbp-split-${j}.log "; done)
+SERVER_LIST=`ServerList | tail -5 | tr '\n' ',' | sed s'/,$//'`
 
+INFO "5 trainers are running on ${SERVER_LIST}"
+
+# parallel -env --link -S "image,music,audio,voice,language" \
+parallel -env --link -j5 \
+    -S "${SERVER_LIST}" \
+    --basefile ${dir} --cleanup \
+    ${this_dir}/scripts/kbp-ed-trainer.sh \
+    ::: ${embedding_path} \
+    ::: $PROCESSED_DATA \
+    ::: "--layer_size" ::: "512,512,512" \
+    ::: "--n_batch_size" ::: "512" \
+    ::: "--learning_rate" ::: "0.128" \
+    ::: "--momentum" ::: "0.9" \
+    ::: "--max_iter" ::: "256" \
+    ::: "--feature_choice" ::: "1023" \
+    ::: "--dropout" \
+    ::: "--char_alpha" ::: "0.8" \
+    ::: "--word_alpha" ::: "0.5" \
+    ::: "--language" ::: "${language}" \
+    ::: "--model" :::+ $MODEL \
+    ::: "--buffer_dir" ::: "${dir}" \
+    ::: "--logfile" :::+ $LOG_FILE
+ 
 
 INFO "evaluating ... "
 
 ${this_dir}/kbp-nfold-eval.py \
-	${eval_path} \
-	kbp-result \
-	${dir}/kbp-gazetteer \
-	${embedding_path} \
-	${dir}/combined
-	
+    ${eval_path} \
+    ${this_dir}/kbp-result \
+    ${dir}/kbp-gaz.pkl \
+    ${embedding_path} \
+    ${dir}/combined
+    

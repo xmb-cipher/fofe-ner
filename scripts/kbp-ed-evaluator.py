@@ -51,11 +51,14 @@ if __name__ == '__main__':
                             ('-avg.wordlist' if config.average else '-word.wordlist') )
     logger.info( 'vocabulary loaded' )
 
-    # kbp_gazetteer = gazetteer( config.data_path + '/kbp-gazetteer' )
-    kbp_gazetteer = gazetteer( args.basename + '.gaz', mode = 'KBP' )
-    # kbp_gazetteer = [ set() for _ in xrange( config.n_label_type ) ]
+    try:
+        pkl_path = os.path.join( args.basename, 'kbp-gaz.pkl' )
+        with open( pkl_path, 'rb' ) as fp:
+            kbp_gazetteer = cPickle.load( fp )
+    except:
+        txt_path = os.path.join( args.basename, 'kbp-gaz.txt' )
+        kbp_gazetteer = gazetteer( txt_path, mode = 'KBP' )
 
-    # idx2ner = [ 'PER_NAM', 'PER_NOM', 'ORG_NAM', 'GPE_NAM', 'LOC_NAM', 'FAC_NAM', 'TTL_NAM', 'O'  ]
     idx2ner = [ 'PER_NAM', 'ORG_NAM', 'GPE_NAM', 'LOC_NAM', 'FAC_NAM',
                 'PER_NOM', 'ORG_NOM', 'GPE_NOM', 'LOC_NOM', 'FAC_NOM',
                 'O' ]  
