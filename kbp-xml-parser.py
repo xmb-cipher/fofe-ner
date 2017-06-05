@@ -163,7 +163,7 @@ def process_one_file( input_dir, output_dir, filename, solution, language, sente
                         if language != 'cmn':
                             word = tokens[u'word']
                             begin_offset = tokens[u'characterOffsetBegin']
-                            print tokens[u'word'], tokens[u'characterOffsetBegin'], tokens[u'characterOffsetEnd']
+                            # print tokens[u'word'], tokens[u'characterOffsetBegin'], tokens[u'characterOffsetEnd']
                             while True:
                                 next_dash = word.find( u'-' )
 

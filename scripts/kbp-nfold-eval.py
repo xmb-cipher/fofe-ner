@@ -43,7 +43,7 @@ if __name__ == '__main__':
         ########## load config ##########
 
         basename = os.path.join( os.path.dirname(__file__),
-                                 'kbp-result', 'kbp-split-%d' % i )
+                                 '../kbp-result', 'kbp-split-%d' % i )
         with open( '%s.config' % basename, 'rb' ) as fp:
             config = cPickle.load( fp )
         logger.info( config.__dict__ )

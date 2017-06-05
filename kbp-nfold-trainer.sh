@@ -11,7 +11,7 @@ train_path=${KBP_NFOLD_TRAIN}
 eval_path=${KBP_NFOLD_EVAL}
 language=${KBP_NFOLD_LANG}
 
-INFO "embedding-path : ${embedding-path}"
+INFO "embedding-path : ${embedding_path}"
 INFO "train-path     : ${train_path}"
 INFO "eval-path      : ${eval_path}"
 INFO "language       : ${language}"
@@ -22,11 +22,11 @@ trap "rm -rf ${dir}" EXIT
 INFO "intermediate files are put in ${dir}"
 
 
-cp -f -R ${train_path} ${dir}/kbp
-cp -f ${train_path}/../kbp-gaz.pkl ${dir}/kbp-gaz.pkl
+cp -f -R -L ${train_path} ${dir}/kbp
+cp -f -L ${train_path}/../kbp-gaz.pkl ${dir}/kbp-gaz.pkl
 train_path=${dir}/kbp
 
-cp -f -R ${eval_path} ${dir}/eval
+cp -f -R -L ${eval_path} ${dir}/eval
 eval_path=${dir}/eval
 
 
@@ -46,7 +46,8 @@ for f in `find ${train_path} -type f`
 do
     # this line gives non-zero return, set -e complains
     # x=`expr ${RANDOM} % 5`
-    x=`python -c "import random; print random.choice([0, 1, 2, 3, 4])"`
+    # x=`python -c "import random; print random.choice([0, 1, 2, 3, 4])"`
+    x=$((RANDOM % 5))
 
     for i in `seq 0 4`
     do
@@ -65,7 +66,7 @@ if [ $# -eq 4 ]
 then
     for f in `find ${iflytek_path} -type f`
     do
-        next=`expr ${RANDOM} % 5`
+        next=$((RANDOM % 5))
         for i in `seq 0 4`
         do
             if [ ${next} -eq ${i} ]
@@ -88,10 +89,11 @@ SERVER_LIST=`ServerList | tail -5 | tr '\n' ',' | sed s'/,$//'`
 
 INFO "5 trainers are running on ${SERVER_LIST}"
 
+# --cleanup option fails to remove folders
 # parallel -env --link -S "image,music,audio,voice,language" \
 parallel -env --link -j5 \
     -S "${SERVER_LIST}" \
-    --basefile ${dir} --cleanup \
+    --basefile ${dir} \
     ${this_dir}/scripts/kbp-ed-trainer.sh \
     ::: ${embedding_path} \
     ::: $PROCESSED_DATA \
@@ -112,10 +114,13 @@ parallel -env --link -j5 \
 
 INFO "evaluating ... "
 
-${this_dir}/kbp-nfold-eval.py \
+${this_dir}/scripts/kbp-nfold-eval.py \
     ${eval_path} \
     ${this_dir}/kbp-result \
     ${dir}/kbp-gaz.pkl \
     ${embedding_path} \
-    ${dir}/combined
+    ${dir}/combined |& tee ${dir}/report
+
+tail -32 ${dir}/report | \
+    mail -s "kbp-nfold-eval" `whoami`@eecs.yorku.ca
     
