@@ -126,7 +126,7 @@ if __name__ == '__main__':
 
     ########## decode ##########
 
-    threshold /=5
+    threshold /= 6.25
     threshold = threshold.tolist()
     logger.info( 'threshold: %s' % str(threshold) )
 
@@ -166,12 +166,13 @@ if __name__ == '__main__':
         for threshold in product( [ 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 ], repeat = 2 ):
             threshold = list( threshold )
 
-            precision, recall, f1, _ = evaluation( pp, threshold, algorithm, True,
+            precision, recall, f1, info = evaluation( pp, threshold, algorithm, True,
                                                    n_label_type = label_type )
             if f1 > best_dev_fb1:
                 best_dev_fb1, best_threshold, best_algorithm = f1, threshold, algorithm
                 best_precision, best_recall = precision, recall
+                best_info = info
 
     logger.info( 'cut-off: %s, algorithm: %-20s' % \
                          (str(best_threshold), str([ idx2algo[i] for i in best_algorithm ])) )
-    logger.info( '%s\n%s' % ('test', info) ) 
+    logger.info( '%s\n%s' % ('test', best_info) ) 

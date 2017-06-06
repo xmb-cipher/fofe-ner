@@ -22,3 +22,4 @@ then
     export KBP_NFOLD_EVAL=${EXPT}/"processed-data/KBP-EDL-${YEAR}/spa-eval-parsed"
 fi
 
+

@@ -19,6 +19,12 @@ def LoadED( rspecifier, language = 'eng' ):
                     'FAC_NAM' : 4, 
                     'TTL_NAM' : 5,
 
+                    # KBP2016 label
+                    'ORG_NOM' : 6,
+                    'GPE_NOM' : 7,
+                    'LOC_NOM' : 8,
+                    'FAC_NOM' : 9,
+
                     # iflytek label
                     'PER_NAME' : 0,  
                     'ORG_NAME' : 1, 

@@ -62,7 +62,7 @@ done
 INFO "kpb-data is processed"
 
 
-if [ $# -eq 4 ]
+if [ ${iflytek_path:+X} != "X" ]
 then
     for f in `find ${iflytek_path} -type f`
     do

@@ -24,13 +24,14 @@ if __name__ == '__main__':
     parser.add_argument( 'in_dir', type = str )
     parser.add_argument( 'out_dir', type = str )
     parser.add_argument( '--buffer', type = str, default = 'eval-buffer' )
+    parser.add_argument( '--nfold', action = 'store_true', default = False )
 
     args = parser.parse_args()
     logger.info( str(args) + '\n' )
 
     from fofe_mention_net import *
-    config = mention_config()
 
+    config = mention_config()
     with open( args.basename + '.config', 'rb' ) as fp:
         config.__dict__.update( cPickle.load( fp ).__dict__ )
     logger.info( config.__dict__ )
