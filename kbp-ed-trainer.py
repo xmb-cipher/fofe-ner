@@ -105,7 +105,7 @@ if __name__ == '__main__':
         logfile = ('log/kbp ' + time.ctime() + '.log').replace(' ', '-')
     else:
         logfile = args.logfile
-        
+
     logging.basicConfig( 
         format = '%(asctime)s : %(levelname)s : %(message)s', 
         level= logging.DEBUG,
@@ -221,19 +221,20 @@ if __name__ == '__main__':
     )
     logger.info( 'valid: ' + str(valid) )
     
-    test = batch_constructor( 
-        imap( lambda x: x[:4], 
-              LoadED( config.data_path + '/%s-train-parsed' % config.language ) 
-        ),
-        numericizer1, 
-        numericizer2, 
-        gazetteer = kbp_gazetteer, 
-        alpha = config.word_alpha, 
-        window = config.n_window, 
-        n_label_type = config.n_label_type,
-        language = config.language,
-        is2ndPass = args.is_2nd_pass 
-    )
+    # test = batch_constructor( 
+    #     imap( lambda x: x[:4], 
+    #           LoadED( config.data_path + '/%s-train-parsed' % config.language ) 
+    #     ),
+    #     numericizer1, 
+    #     numericizer2, 
+    #     gazetteer = kbp_gazetteer, 
+    #     alpha = config.word_alpha, 
+    #     window = config.n_window, 
+    #     n_label_type = config.n_label_type,
+    #     language = config.language,
+    #     is2ndPass = args.is_2nd_pass 
+    # )
+    test = train
     logger.info( 'test: ' + str(test) )
 
     logger.info( 'data set loaded' )
@@ -272,24 +273,17 @@ if __name__ == '__main__':
         #############################################
 
         if config.enable_distant_supervision:
+            X, Y = n_epoch / 16, n_epoch % (16 if not args.iflytek else 4)
             dsp = distant_supervision_parser( 
-                '/local/scratch/mingbin/distant-supervision/sentences-v2',
-                '/local/scratch/mingbin/distant-supervision/joint-labels-v2',
-                n_epoch, 
-                None, 
-                128 
-            )
-            train = batch_constructor( 
-                dsp, 
-                numericizer1, 
-                numericizer2, 
-                gazetteer = kbp_gazetteer, 
-                alpha = config.word_alpha, 
-                window = config.n_window, 
-                n_label_type = config.n_label_type,
-                language = config.language,
-                is2ndPass = args.is_2nd_pass
-            )
+                    'distant-supervision/data-chunk/sentence-%02d' % X,
+                    'distant-supervision/data-chunk/labels-%02d' % X,
+                    Y, None, 64 if not args.iflytek else 16  )
+            train = batch_constructor( dsp, numericizer1, numericizer2, 
+                                       gazetteer = kbp_gazetteer, 
+                                       alpha = config.word_alpha, 
+                                       window = config.n_window, 
+                                       n_label_type = config.n_label_type,
+                                       language = config.language )
             logger.info( 'train: ' + str(train) )
         else:
             train = human
@@ -297,9 +291,10 @@ if __name__ == '__main__':
         # phar is used to observe training progress
         logger.info( 'epoch %2d, learning-rate: %f' % \
                         (n_epoch + 1, mention_net.config.learning_rate) )
-        pbar = tqdm( total = len(train.positive) + 
-                             int(len(train.overlap) * config.overlap_rate) +
-                             int(len(train.disjoint) * config.disjoint_rate) )
+        total = len(train.positive) + \
+                int(len(train.overlap) * config.overlap_rate) + \
+                int(len(train.disjoint) * config.disjoint_rate)
+        pbar = tqdm( total = total )
 
         cost, cnt = 0, 0
         

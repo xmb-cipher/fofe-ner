@@ -1756,4 +1756,466 @@ def distant_supervision_parser( sentence_file, tag_file,
 ################################################################################
 
 
+cdef class processed_sentence_v2:
+    cdef readonly vector[int] numeric
+    cdef readonly vector[string] sentence
+    cdef readonly vector[vector[int]] left2nd
+    cdef readonly vector[vector[int]] right2nd
+    cdef readonly bint is_2nd_pass
+    cdef vector[int] word_buff
+
+
+    def __init__( self, sentence, numericizer, 
+                  language = 'eng', label1st = None ):
+        cdef vocabulary vocab
+        if language != 'cmn':
+            for w in sentence:
+                self.sentence.push_back(
+                    u''.join( c if ord(c) < 128 else chr(ord(c) % 32) for c in list(w) )
+                )
+            vocab = numericizer
+            vocab.sentence2indices( self.sentence, self.numeric )
+        else:
+            self.numeric = numericizer.sentence2indices( sentence )
+
+        self.is_2nd_pass = (label1st is not None)
+
+        cdef ordered_map[int,int] boe
+        cdef ordered_map[int,int] eoe
+        cdef vector[int] left_context
+        cdef vector[int] right_context
+        cdef vector[int] left_buff
+        cdef vector[int] right_buff
+        cdef int i
+        cdef int idx
+        cdef int n = self.numeric.size()
+        cdef int n_word = len(numericizer)
+
+        if self.is_2nd_pass:
+            boe = dict(zip(label1st[0], label1st[2]))
+            eoe = dict(zip(label1st[1], label1st[2]))
+
+            with nogil:
+                for i in range( n ):
+                    if boe.find(i) != boe.end():
+                        left_buff = left_context
+
+                    if eoe.find(i + 1) == eoe.end():
+                        idx = self.numeric[i]
+                    else:
+                        idx = n_word + eoe[i + 1]
+                        left_context = left_buff
+
+                    left_context.push_back( idx )
+                    self.left2nd.push_back( left_context )
+
+                for i in reversed( range( n ) ):
+                    if eoe.find(i + 1) != eoe.end():
+                        right_buff = right_context
+
+                    if boe.find(i) == boe.end():
+                        idx = self.numeric[i]
+                    else:
+                        idx = n_word + boe[i]
+                        right_context = right_buff
+
+                    right_context.push_back( idx )
+                    self.right2nd.push_back( right_context ) 
+
+                reverse( self.right2nd.begin(), self.right2nd.end() )
+
+
+    cdef insert_left( self, int pos, 
+                      vector[vector[int]]& context ):
+        if self.is_2nd_pass:
+            with nogil:
+                context.push_back( self.left2nd[pos] )
+            return self.left2nd[pos].size()
+        else:
+            with nogil:
+                self.word_buff.clear()
+                self.word_buff.insert( 
+                    self.word_buff.end(), 
+                    self.numeric.begin(), 
+                    self.numeric.begin() + pos + 1
+                )
+                context.push_back( self.word_buff )
+            return self.word_buff.size()
+
+        
+    cdef insert_right( self, int pos, 
+                       vector[vector[int]]& context ):
+        if self.is_2nd_pass:
+            with nogil:
+                context.push_back( self.right2nd[pos] )
+            return self.right2nd[pos].size()
+        else:
+            with nogil:
+                self.word_buff.clear()
+                self.word_buff.insert(
+                    self.word_buff.end(),
+                    self.numeric.begin() + pos,
+                    self.numeric.end()
+                )
+                context.push_back( self.word_buff )
+            return self.word_buff.size()
+
+
+    cdef insert_bow( self, int begin_idx, int end_idx, 
+                     vector[vector[int]]& bow ):
+        if self.is_2nd_pass:
+            with nogil:
+                self.word_buff.clear()
+                bow.push_back( self.word_buff )
+            return 0
+        else:
+            with nogil:
+                self.word_buff.clear()
+                self.word_buff.insert(
+                    self.word_buff.end(),
+                    self.numeric.begin() + begin_idx,
+                    self.numeric.begin() + end_idx
+                )
+                bow.push_back( self.word_buff )
+            return self.word_buff.size()                
+
+
+
+
+class batch_constructor_v2:
+    def __init__( self, parser, 
+                  numericizer1, numericizer2,
+                  gazetteer = None, window = 7, 
+                  n_label_type = 4, language = 'eng',
+                  is_2nd_pass = False ):
+        assert language in { 'eng', 'cmn', 'spa' }
+        self.language = language
+
+        # case-insensitive sentence set if language in { 'eng', 'spa' }
+        # sequence at char level
+        self.sentence1 = []
+
+        # case-sensitive sentence set if language in { 'eng', 'spa' }
+        # sequence at word level
+        self.sentence2 = []
+
+        self.example = []
+        self.positive = []
+        self.overlap = []
+        self.disjoint = []
+
+        self.is2ndPass = is_2nd_pass
+
+        # luckily that 'batch_constructor' is not strongly-typed
+        # it is OK that these two data members hold garbage value when parsing Chinese
+        self.numericizer1 = numericizer1    # case-insensitive / char-level
+        self.numericizer2 = numericizer2    # case-sensitive / word-level
+
+        self.gazetteer = gazetteer
+        self.n_label_type = n_label_type
+
+        cdef int i, j, k
+        cdef bint unsure
+
+        for sentence, ner_begin, ner_end, ner_label in parser:
+            ner_begin = numpy.asarray(ner_begin, dtype = numpy.int32)
+            ner_end = numpy.asarray(ner_end, dtype = numpy.int32)
+            ner_label = numpy.asarray(ner_label, dtype = numpy.int32)
+            label1st_powerset = []
+            
+            label1st_powerset.append( (ner_begin, ner_end, ner_label) )
+
+            for label1st in label1st_powerset:
+                for i in range( len(sentence) ):
+                    for j in range( i + 1, len(sentence) + 1 ):
+                        unsure, found = False, False
+                        if j - i > window:
+                            break
+                        label = n_label_type
+                        # look for exact match
+                        for k in range(len(ner_label)):
+                            if i == ner_begin[k] and j == ner_end[k]:
+                                label = ner_label[k]
+                                if label < n_label_type:
+                                    self.positive.append( len(self.example) )
+                                else:
+                                    unsure = True
+                                found = True
+                                break
+                        # look for overlap
+                        if not found:
+                            for k in range(len(ner_label)):
+                                if i < ner_end[k] and ner_begin[k] < j:
+                                    label = n_label_type + 1
+                                    self.overlap.append( len(self.example) )
+                                    break
+                        if unsure:
+                            continue
+                        if label == n_label_type:
+                            self.disjoint.append( len(self.example) )
+                        if label == n_label_type + 1:
+                            label = n_label_type
+
+                        gazetteer_match = numpy.zeros( (n_label_type + 1,), dtype = numpy.float32 )
+                        if self.gazetteer is not None:
+                            if language != 'cmn':
+                                name = u' '.join(sentence[i:j])
+                            else:
+                                name = u''.join( w[:w.find(u'|iNCML|')] for w in sentence[i:j] )
+                            for k, g in enumerate(self.gazetteer):
+                                if name in g:
+                                    gazetteer_match[k] = 1
+
+                        self.example.append( example( len(self.sentence1), 
+                                                      i, j, label ,gazetteer_match) )
+                
+                if not self.is2ndPass:
+                    label1st = None
+
+                if language != 'cmn': 
+                    self.sentence1.append( 
+                        processed_sentence_v2( 
+                            sentence, 
+                            numericizer1, 
+                            language = language,
+                            label1st = label1st
+                        )
+                    )
+                    self.sentence2.append( 
+                        processed_sentence_v2( 
+                            sentence, 
+                            numericizer2, 
+                            language = language,
+                            label1st = label1st
+                        ) 
+                    )
+                else:
+                    char_sequence, word_sequence = [], []
+                    for token in sentence:
+                        c, w = token.split( u'|iNCML|' )
+                        char_sequence.append( c )
+                        word_sequence.append( w )
+                    self.sentence1.append( 
+                        processed_sentence_v2( 
+                            char_sequence, 
+                            numericizer1,
+                            language = language,
+                            label1st = label1st 
+                        ) 
+                    )
+                    self.sentence2.append( 
+                        processed_sentence_v2( 
+                            word_sequence, 
+                            numericizer2,
+                            language = language,
+                            label1st = label1st
+                        ) 
+                    )
+
+        self.positive = numpy.asarray( self.positive, dtype = numpy.int32 )
+        self.overlap = numpy.asarray( self.overlap, dtype = numpy.int32 )
+        self.disjoint = numpy.asarray( self.disjoint, dtype = numpy.int32 )
+
+
+    @cython.boundscheck(False)
+    def mini_batch( self, int n_batch_size, 
+                    bint shuffle_needed = True, float overlap_rate = 0.36, 
+                    float disjoint_rate = 0.08, int feature_choice = 255, 
+                    bint replace = False, int n_copy = 1  ):
+
+        cdef vector[vector[int]] lw1
+        cdef vector[vector[int]] rw1
+        cdef int max_length1 = 1
+
+        cdef vector[vector[int]] lw2
+        cdef vector[vector[int]] rw2
+        cdef int max_length2 = 1
+
+        cdef vector[vector[int]] lw3
+        cdef vector[vector[int]] rw3
+        cdef int max_length3 = 1 
+
+        cdef vector[vector[int]] lw4
+        cdef vector[vector[int]] rw4
+        cdef int max_length4 = 1
+
+        cdef vector[vector[int]] bow1
+        cdef vector[vector[int]] bow2
+        cdef int max_length5 = 1
+
+        cdef vector[vector[int]] lc
+        cdef vector[vector[int]] rc
+        cdef int phrase_max_length = 10
+
+        cdef example next_example
+        cdef processed_sentence_v2 sentence
+        cdef vector[int] label
+        cdef int i, j, k, begin_idx, end_idx
+        cdef int cnt = 0
+        cdef int n
+        cdef string phrase
+
+
+        batch_buff = numpy.ndarray(
+            (12, n_batch_size, 32),
+            numpy.int32
+        )
+        cdef int[:,:,:] buff_view = batch_buff
+
+        gaz_buff = numpy.zeros(
+            (n_batch_size, 1 + self.n_label_type),
+            dtype = numpy.float32
+        )
+
+        has_char_feature = feature_choice & (64 | 128 | 512 | 1024)
+        assert not has_char_feature or self.language != 'cmn', \
+                'Chinese is modeled at character level. '
+
+        if n_copy > 1:
+            shuffle_needed = True
+            replace = True
+
+        if len( self.disjoint ) > 0: 
+            disjoint = numpy.random.choice( 
+                self.disjoint,
+                size = numpy.int32( len(self.disjoint) * disjoint_rate * n_copy ),
+                replace = replace 
+            )
+        else:
+            disjoint = numpy.asarray([]).astype( numpy.int32 )
+
+        if len( self.overlap ) > 0:
+            overlap = numpy.random.choice( 
+                self.overlap,
+                size = numpy.int32( len(self.overlap) * overlap_rate * n_copy ),
+                replace = replace 
+            )
+        else:
+            overlap = numpy.asarray([]).astype( numpy.int32 )
+
+        candidate = numpy.concatenate( [ self.positive ] * n_copy + [ disjoint, overlap ] )
+
+        if shuffle_needed:
+            numpy.random.shuffle( candidate )
+        else:
+            candidate.sort()
+        n = len(candidate)
+
+
+        for i in range( n ):
+            next_example = self.example[ candidate[i] ]
+            begin_idx = next_example.begin_idx
+            end_idx = next_example.end_idx
+
+            sentence = self.sentence1[next_example.sentence_id]
+
+            if self.language != 'cmn':
+                phrase = ' '.join( sentence.sentence[begin_idx:end_idx] )
+
+            with nogil:
+                for j in range( 12 ):
+                    for k in range( 32 ):
+                        buff_view[j,cnt,k] = 2054
+
+            #     label.push_back( next_example.label )
+
+            #     if feature_choice & (512 | 64) > 0:
+            #         if phrase.size() + 2 > phrase_max_length:
+            #             phrase_max_length = phrase.size() + 2
+            #         char_buff.clear()
+            #         char_buff.push_back( 0 )
+            #         for k in range( phrase.size() ):
+            #             char_buff.push_back( <int>phrase[k] )
+            #         char_buff.push_back( 0 )
+            #         lc.push_back( char_buff )
+
+            #     if feature_choice & 64 > 0:
+            #         reverse( char_buff.begin(), char_buff.end() )
+            #         rc.push_back( char_buff )
+
+            # if feature_choice & 256 > 0:
+            #     gaz_buff[cnt] = next_example.gazetteer
+
+            # if feature_choice & 1 > 0:
+            #     sentence.insert_left( end_idx - 1, lw1 )
+            #     sentence.insert_right( begin_idx, rw1 )
+
+            # if feature_choice & 2 > 0:
+            #     sentence.insert_left( begin_idx - 1, lw2 )
+            #     sentence.insert_right( end_idx, rw2 )
+
+            # if feature_choice & 4 > 0:
+            #     sentence.insert_bow( begin_idx, end_idx, bow1 )
+
+            sentence = self.sentence2[next_example.sentence_id]
+
+            # if feature_choice & 8 > 0:
+            #     sentence.insert_left( end_idx - 1, lw3 )
+            #     sentence.insert_right( begin_idx, rw3 )
+
+            # if feature_choice & 16 > 0:
+            #     sentence.insert_left( begin_idx - 1, lw4 )
+            #     sentence.insert_right( end_idx, rw4 )
+
+            # if feature_choice & 32 > 0:
+            #     sentence.insert_bow( begin_idx, end_idx, bow2 )
+
+            cnt += 1
+            if cnt % n_batch_size == 0 or (i + 1) == len(candidate):
+                yield i + 1
+                # yield {
+                #     'word' : {
+                #         'case-insensitive' : {
+                #             'left-incl' : lw1,
+                #             'right-incl' : rw1,
+                #             'left-excl' : lw2,
+                #             'right-excl' : rw2,
+                #             'bow' : bow1
+                #         },
+                #         'case-sensitive' : {
+                #             'left-incl' : lw3,
+                #             'right-incl' : rw3,
+                #             'left-excl' : lw4,
+                #             'right-excl' : rw4,
+                #             'bow' : bow2
+                #         }
+                #     },
+                #     'char' : {
+                #         'left' : lc,
+                #         'right' : rc
+                #     },
+                #     'gaz' : gaz_buff[:cnt,:],
+                #     'target' : label
+                # }
+
+                with nogil:
+                    lw1.clear()
+                    rw1.clear()
+                    max_length1 = 1
+                    lw2.clear()
+                    rw2.clear()
+                    max_length2 = 1
+                    lw3.clear()
+                    rw3.clear()
+                    max_length3 = 1
+                    lw4.clear()
+                    rw4.clear()
+                    max_length4 = 1
+                    bow1.clear()
+                    bow2.clear()
+                    max_length5 = 1
+                    label.clear()
+                    cnt = 0
+
+
+    def __str__( self ):
+        """
+        Returns
+        -------
+            Return a string description of this object.
+        """
+        return ('%d sentences, %d (positive), %d (overlap), %d (disjoint)' % 
+                (len(self.sentence1), 
+                    self.positive.shape[0], self.overlap.shape[0], self.disjoint.shape[0]) )
+
 

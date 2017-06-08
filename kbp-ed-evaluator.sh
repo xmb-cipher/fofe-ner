@@ -20,6 +20,12 @@ IN_DIR=$2
 GOLD=$3
 INFO "MODEL == ${MODEL}"
 INFO "IN_DIR == ${IN_DIR}"
+
+# a sub-shell switches folder; must be absolute path
+GOLD_DIR=$(cd $(dirname $GOLD); pwd)
+INFO "GOLD_DIR == ${GOLD_DIR}"
+
+GOLD=${GOLD_DIR}/`basename $3`
 INFO "GOLD == ${GOLD}"
 
 export PYTHONPATH="${THIS_DIR}"
@@ -37,7 +43,7 @@ ${THIS_DIR}/scripts/kbp-ed-evaluator.py \
 	${MODEL} \
 	${IN_DIR} \
 	${BUFFER_DIR}/labeled \
-	--buffer ${BUFFER_DIR}/eval-buff
+	--nfold
 INFO "Labels generated."
 
 ${THIS_DIR}/scripts/reformat.py \

@@ -1,6 +1,7 @@
 #!/eecs/research/asr/mingbin/python-workspace/hopeless/bin/python
 
 import numpy, argparse, logging, time, cPickle, codecs
+from io import BytesIO
 
 
 # set a logging file at DEBUG level, TODO: windows doesn't allow ":" appear in a file name
@@ -23,7 +24,6 @@ if __name__ == '__main__':
     parser.add_argument( 'basename', type = str )
     parser.add_argument( 'in_dir', type = str )
     parser.add_argument( 'out_dir', type = str )
-    parser.add_argument( '--buffer', type = str, default = 'eval-buffer' )
     parser.add_argument( '--nfold', action = 'store_true', default = False )
 
     args = parser.parse_args()
@@ -31,15 +31,30 @@ if __name__ == '__main__':
 
     from fofe_mention_net import *
 
-    config = mention_config()
-    with open( args.basename + '.config', 'rb' ) as fp:
-        config.__dict__.update( cPickle.load( fp ).__dict__ )
-    logger.info( config.__dict__ )
-    logger.info( 'configuration loaded' )
+    threshold = numpy.zeros( (2,), dtype = numpy.float32 )
+    algorithm = {}
+    config_list, mention_net_list = [], []
+    basename_list = [ args.basename ]
+    if args.nfold:
+        basename_list = [ '%s-%d' % (args.basename, i) for i in xrange(5) ]
 
-    mention_net = fofe_mention_net( config )
-    mention_net.fromfile( args.basename )
-    logger.info( 'model loaded' )
+    for basename in basename_list:
+        config = mention_config()
+        with open( basename + '.config', 'rb' ) as fp:
+            config.__dict__.update( cPickle.load( fp ).__dict__ )
+        logger.info( config.__dict__ )
+        config_list.append( config )
+
+        threshold += numpy.asarray( config.threshold, dtype = numpy.float32 )
+        config.algorithm = tuple(config.algorithm)
+        if config.algorithm in algorithm:
+            algorithm[config.algorithm] += 1
+        else:
+            algorithm[config.algorithm] = 1
+
+        mention_net = fofe_mention_net( config )
+        mention_net.fromfile( basename )
+        mention_net_list.append( mention_net )
 
     if config.language != 'cmn':
         numericizer1 = vocabulary( args.basename + '-case-insensitive.wordlist', 
@@ -50,19 +65,34 @@ if __name__ == '__main__':
         numericizer1 = chinese_word_vocab( args.basename + '-char.wordlist' )
         numericizer2 = chinese_word_vocab( args.basename + \
                             ('-avg.wordlist' if config.average else '-word.wordlist') )
-    logger.info( 'vocabulary loaded' )
+
+    logger.info( 'config, model & vocab loaded' )
 
     try:
-        pkl_path = os.path.join( args.basename, 'kbp-gaz.pkl' )
+        pkl_path = "%s.pkl" % args.basename
         with open( pkl_path, 'rb' ) as fp:
             kbp_gazetteer = cPickle.load( fp )
     except:
-        txt_path = os.path.join( args.basename, 'kbp-gaz.txt' )
+        txt_path = "%s.gaz" % args.basename
         kbp_gazetteer = gazetteer( txt_path, mode = 'KBP' )
 
     idx2ner = [ 'PER_NAM', 'ORG_NAM', 'GPE_NAM', 'LOC_NAM', 'FAC_NAM',
                 'PER_NOM', 'ORG_NOM', 'GPE_NOM', 'LOC_NOM', 'FAC_NOM',
-                'O' ]  
+                'O' ]
+
+    if args.nfold:
+        threshold /= 6.25
+    threshold = threshold.tolist()
+    logger.info( 'threshold: %s' % str(threshold) )
+
+    algo = None
+    for a in algorithm:
+        if algo is None:
+            algo = a
+        elif algorithm[a] > algorithm[algo]:
+            algo = a
+    algorithm = list(algo)
+    logger.info( 'algorithm: %s' % str(algorithm) )
 
 
     # ==========================================================================================
@@ -79,32 +109,55 @@ if __name__ == '__main__':
             texts, tags, failures = processed.split( u'\n\n\n', 2 )
             texts = [ text.split( u'\n' ) for text in texts.split( u'\n\n' ) ]
             
-            data = batch_constructor( # imap( lambda x: (x[0].split(u' '), [], [], []), texts ), 
-                                      imap( lambda x: x[:4], LoadED( full_name ) ),
-                                      numericizer1, numericizer2, gazetteer = kbp_gazetteer, 
-                                      alpha = config.word_alpha, window = config.n_window, 
-                                      n_label_type = config.n_label_type,
-                                      language = config.language )
-            logger.info( 'data: ' + str(data) )
+            for i, mention_net in enumerate( mention_net_list ):
+                data = batch_constructor( 
+                    imap( lambda x: x[:4], LoadED( full_name ) ),
+                    numericizer1, 
+                    numericizer2, 
+                    gazetteer = kbp_gazetteer, 
+                    alpha = config.word_alpha, window = config.n_window, 
+                    n_label_type = config.n_label_type,
+                    language = config.language 
+                )
+                logger.info( 'data: ' + str(data) )
 
-            with open( args.buffer, 'wb' ) as buff_file:
+                prob = []
                 for example in data.mini_batch_multi_thread( 512, False, 1, 1, config.feature_choice ):
                     _, pi, pv = mention_net.eval( example )
 
-                    # expcted has gargadge values
-                    for estimate, probability in zip( pi, pv ):
-                        print >> buff_file, '%d  %d  %s' % \
-                                (-1, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
+                    prob.append(
+                        numpy.concatenate(
+                            ( example[-1].astype(numpy.float32).reshape(-1, 1),
+                              pi.astype(numpy.float32).reshape(-1, 1),
+                              pv ),
+                            axis = 1
+                        )
+                    )
+                prob = numpy.concatenate( prob, axis = 0 )
+
+                if i == 0:
+                    prob_avg = prob
+                else:
+                    prob_avg += prob
+
+            prob_avg /= len(mention_net_list)
+            prob_avg[:,1] = prob_avg[:,2:].argmax( axis = 1 )
+
+            memory = BytesIO()
+            numpy.savetxt( 
+                memory, 
+                prob_avg, 
+                fmt = '%d  %d' + '  %f' * (config.n_label_type + 1) 
+            )
+            memory.seek(0)
 
             labeled_text = []
             for (sent, offsets), (s, table, estimate, actual) in zip( texts,
-                    PredictionParser( # imap( lambda x: (x[0].split(u' '), [], [], []), texts ),
-                                      imap( lambda x: x[:4], LoadED( full_name ) ),
-                                      args.buffer, config.n_window,
+                    PredictionParser( imap( lambda x: x[:4], LoadED( full_name ) ),
+                                      memory, config.n_window,
                                       n_label_type = config.n_label_type ) ):
 
-                estimate = decode( s, estimate, table, config.threshold, config.algorithm,
-                                   config.customized_threshold ) 
+                estimate = decode( s, estimate, table, threshold, algorithm ) 
                 estimate = [ u'(%d,%d,DUMMY,%s,%s)' % \
                              tuple([b,e] + idx2ner[c].split('_')) for b,e,c in sorted(estimate) ]
                 span = sent + u'\n' + offsets

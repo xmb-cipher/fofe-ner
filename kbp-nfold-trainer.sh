@@ -42,50 +42,68 @@ INFO "folders are created"
 
 
 
-for f in `find ${train_path} -type f`
+for f in `find -L ${train_path} -type f`
 do
-    # this line gives non-zero return, set -e complains
-    # x=`expr ${RANDOM} % 5`
-    # x=`python -c "import random; print random.choice([0, 1, 2, 3, 4])"`
     x=$((RANDOM % 5))
-
     for i in `seq 0 4`
     do
         if [ ${x} -eq ${i} ]
         then
             ln -s ${f} ${dir}/split-${i}/${language}-eval-parsed/`basename ${f}`
         else
-            ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/`basename ${f}`
+            # the loop is to control the ratio of kbp to iflytek
+            for c in `seq 1 ${N_COPY:-1}`
+            do
+                ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/copy-${c}-`basename ${f}`
+            done
         fi
     done
 done
 INFO "kpb-data is processed"
 
 
-if [ ${iflytek_path:+X} != "X" ]
+INFO "KBP_IFLYTEK == ${KBP_IFLYTEK}"
+if [ ! -z ${IFLYTEK+X} ]
 then
-    for f in `find ${iflytek_path} -type f`
+    iflytek_path=${dir}/iflytek
+    cp -f -R -L ${KBP_IFLYTEK} ${iflytek_path}
+    idx=0
+
+    for f in `find -L ${iflytek_path} -type f`
     do
+        fid=`printf %06d ${idx}`
+        idx=$((idx + 1))
         next=$((RANDOM % 5))
         for i in `seq 0 4`
         do
             if [ ${next} -eq ${i} ]
             then
-                ln -s ${f} ${dir}/split-${i}/${language}-eval-parsed/`basename ${f}`
+                next=$((RANDOM % 2))
+                if [ ${next} -eq 0 ]
+                then
+                    ln -s ${f} ${dir}/split-${i}/${language}-eval-parsed/${fid}
+                else
+                    ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/${fid}
+                fi
             else
-                ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/`basename ${f}`
+                ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/${fid}
             fi
         done
     done
     INFO "iflytek-data is processed"
 fi
 
+# DEBUG
+while true; do sleep 128; done
+
 INFO "training ... "
 
 PROCESSED_DATA=$(for i in $(seq 0 4); do printf "${dir}/split-${i} "; done)
 MODEL=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/kbp-split-${j} "; done)
 LOG_FILE=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/kbp-split-${j}.log "; done)
-SERVER_LIST=`ServerList | tail -5 | tr '\n' ',' | sed s'/,$//'`
+
+# SERVER_LIST=`ServerList | tail -5 | tr '\n' ',' | sed s'/,$//'`
+SERVER_LIST="ea31,ea32,ea33,ea34,ea35"
 
 INFO "5 trainers are running on ${SERVER_LIST}"
 
@@ -101,7 +119,7 @@ parallel -env --link -j5 \
     ::: "--n_batch_size" ::: "512" \
     ::: "--learning_rate" ::: "0.128" \
     ::: "--momentum" ::: "0.9" \
-    ::: "--max_iter" ::: "256" \
+    ::: "--max_iter" ::: "${N_EPOCH:-256}" \
     ::: "--feature_choice" ::: "1023" \
     ::: "--dropout" \
     ::: "--char_alpha" ::: "0.8" \
