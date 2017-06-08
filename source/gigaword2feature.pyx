@@ -335,6 +335,7 @@ cdef class vocabulary( object ):
     cdef readonly float alpha
     cdef bint case_sensitive
     cdef int n_word
+    cdef int pad_idx
     cdef regex* date_pattern_1
     cdef regex* date_pattern_2
     cdef regex* number_pattern
@@ -364,12 +365,14 @@ cdef class vocabulary( object ):
         logger.info( '%d words' % len(self.word2idx) )
 
         # 2nd pass, make room for labels
-        self.n_word = len(self.word2idx) - n_label_type - (2 if self.case_sensitive else 1)
+        self.n_word = len(self.word2idx) - n_label_type - (2 if self.case_sensitive else 1) - 1
         if n_label_type > 0:
             for w in self.word2idx.keys():
                 if w != '<unk>' and w != '<UNK>' \
                         and self.word2idx[w] >= self.n_word:
                     self.word2idx.pop(w, None)
+
+        self.pad_idx = self.n_word
 
 
     def __len__( self ):
@@ -453,6 +456,10 @@ cdef class vocabulary( object ):
         return lfofe, rfofe
 
 
+    def padding_index( self ):
+        return self.pad_idx
+
+
 ################################################################################
 
 
@@ -468,11 +475,13 @@ class chinese_word_vocab( vocabulary ):
         self.word2idx = { w:i for (i,w) in enumerate( self.idx2word ) }
 
         # 2nd pass, make room for labels
-        self.n_word = len(self.word2idx) - n_label_type - 1
+        self.n_word = len(self.word2idx) - n_label_type - 1 - 1
         if n_label_type > 0:
             for w in self.word2idx.keys():
                 if w != '<unk>' and self.word2idx[w] >= self.n_word:
                     self.word2idx.pop(w, None)
+
+        self.pad_idx = self.n_word
 
 
 
@@ -491,6 +500,8 @@ class chinese_word_vocab( vocabulary ):
         raise AttributeError( "'chinese_word_vocab' does not provide 'char_fofe_of_phrase'" )
 
 
+    def padding_index( self ):
+        return self.pad_idx
 
 ################################################################################
 
@@ -1762,7 +1773,6 @@ cdef class processed_sentence_v2:
     cdef readonly vector[vector[int]] left2nd
     cdef readonly vector[vector[int]] right2nd
     cdef readonly bint is_2nd_pass
-    cdef vector[int] word_buff
 
 
     def __init__( self, sentence, numericizer, 
@@ -1825,59 +1835,51 @@ cdef class processed_sentence_v2:
                 reverse( self.right2nd.begin(), self.right2nd.end() )
 
 
-    cdef insert_left( self, int pos, 
-                      vector[vector[int]]& context ):
+    @cython.boundscheck(False)
+    cdef int insert_left( self, int pos, int[:] context ) nogil:
+        cdef int i
+        cdef int length = context.shape[0]
         if self.is_2nd_pass:
-            with nogil:
-                context.push_back( self.left2nd[pos] )
-            return self.left2nd[pos].size()
+            if self.left2nd[pos].size() < length:
+                length = self.left2nd[pos].size()
+            for i in range(length):
+                context[i] = self.left2nd[pos][i]
         else:
-            with nogil:
-                self.word_buff.clear()
-                self.word_buff.insert( 
-                    self.word_buff.end(), 
-                    self.numeric.begin(), 
-                    self.numeric.begin() + pos + 1
-                )
-                context.push_back( self.word_buff )
-            return self.word_buff.size()
+            if pos + 1 < length:
+                length = pos + 1
+            for i in range(length):
+                context[i] = self.numeric[i]
+        return length
 
         
-    cdef insert_right( self, int pos, 
-                       vector[vector[int]]& context ):
+    @cython.boundscheck(False)
+    cdef int insert_right( self, int pos, int[:] context ) nogil:
+        cdef int i
+        cdef int length = context.shape[0]
         if self.is_2nd_pass:
-            with nogil:
-                context.push_back( self.right2nd[pos] )
-            return self.right2nd[pos].size()
+            if self.right2nd[pos].size() < length:
+                length = self.right2nd[pos].size()
+            for i in range(length):
+                context[i] = self.right2nd[pos][i]
         else:
-            with nogil:
-                self.word_buff.clear()
-                self.word_buff.insert(
-                    self.word_buff.end(),
-                    self.numeric.begin() + pos,
-                    self.numeric.end()
-                )
-                context.push_back( self.word_buff )
-            return self.word_buff.size()
+            if self.numeric.size() - pos < length:
+                length = self.numeric.size() - pos
+            for i in range(length):
+                context[i] = self.numeric[i + pos]
+        return length
 
 
-    cdef insert_bow( self, int begin_idx, int end_idx, 
-                     vector[vector[int]]& bow ):
+    @cython.boundscheck(False)
+    cdef int insert_bow( self, int begin_idx, int end_idx, int[:] bow ) nogil:
+        cdef int i
+        cdef int length = end_idx - begin_idx
         if self.is_2nd_pass:
-            with nogil:
-                self.word_buff.clear()
-                bow.push_back( self.word_buff )
             return 0
         else:
-            with nogil:
-                self.word_buff.clear()
-                self.word_buff.insert(
-                    self.word_buff.end(),
-                    self.numeric.begin() + begin_idx,
-                    self.numeric.begin() + end_idx
-                )
-                bow.push_back( self.word_buff )
-            return self.word_buff.size()                
+            for i in range(length):
+                bow[i] = self.numeric[i + begin_idx]
+            return length
+                            
 
 
 
@@ -1956,7 +1958,7 @@ class batch_constructor_v2:
                         if label == n_label_type + 1:
                             label = n_label_type
 
-                        gazetteer_match = numpy.zeros( (n_label_type + 1,), dtype = numpy.float32 )
+                        gazetteer_match = []
                         if self.gazetteer is not None:
                             if language != 'cmn':
                                 name = u' '.join(sentence[i:j])
@@ -1964,10 +1966,17 @@ class batch_constructor_v2:
                                 name = u''.join( w[:w.find(u'|iNCML|')] for w in sentence[i:j] )
                             for k, g in enumerate(self.gazetteer):
                                 if name in g:
-                                    gazetteer_match[k] = 1
+                                    gazetteer_match.append(k)
 
-                        self.example.append( example( len(self.sentence1), 
-                                                      i, j, label ,gazetteer_match) )
+                        self.example.append( 
+                            example( 
+                                len(self.sentence1), i, j, label ,
+                                numpy.asarray(
+                                    gazetteer_match,
+                                    dtype = numpy.int32
+                                )
+                            ) 
+                        )
                 
                 if not self.is2ndPass:
                     label1st = None
@@ -2021,31 +2030,48 @@ class batch_constructor_v2:
     def mini_batch( self, int n_batch_size, 
                     bint shuffle_needed = True, float overlap_rate = 0.36, 
                     float disjoint_rate = 0.08, int feature_choice = 255, 
-                    bint replace = False, int n_copy = 1  ):
+                    bint replace = False, int n_copy = 1,
+                    int context_limit = 64 ):
 
-        cdef vector[vector[int]] lw1
-        cdef vector[vector[int]] rw1
-        cdef int max_length1 = 1
+        lw1, rw1, lw2, rw2, lw3, rw3, lw4, rw4, \
+        bow1, bow2 = [
+            numpy.ones(
+                (n_batch_size, context_limit),
+                numpy.int32
+            ) * (-1) for _ in xrange(10)
+        ]
+        lc, rc = [
+            numpy.ones( 
+                (n_batch_size, context_limit * 2),
+                numpy.int32
+            ) * 127 for _ in xrange(2)
+        ]
 
-        cdef vector[vector[int]] lw2
-        cdef vector[vector[int]] rw2
-        cdef int max_length2 = 1
+        cdef int[:,:] lw1v = lw1
+        cdef int[:,:] rw1v = rw1
+        cdef int[:,:] lw2v = lw2
+        cdef int[:,:] rw2v = rw2
+        cdef int[:,:] lw3v = lw3
+        cdef int[:,:] rw3v = rw3
+        cdef int[:,:] lw4v = lw4
+        cdef int[:,:] rw4v = rw4
+        cdef int[:,:] bow1v = bow1
+        cdef int[:,:] bow2v = bow2
+        cdef int[:,:] lcv = lc
+        cdef int[:,:] rcv = rc
+        lcv[:,:] = 127
+        rcv[:,:] = 127
 
-        cdef vector[vector[int]] lw3
-        cdef vector[vector[int]] rw3
-        cdef int max_length3 = 1 
-
-        cdef vector[vector[int]] lw4
-        cdef vector[vector[int]] rw4
-        cdef int max_length4 = 1
-
-        cdef vector[vector[int]] bow1
-        cdef vector[vector[int]] bow2
-        cdef int max_length5 = 1
-
-        cdef vector[vector[int]] lc
-        cdef vector[vector[int]] rc
-        cdef int phrase_max_length = 10
+        cdef int lw1len = 1
+        cdef int rw1len = 1
+        cdef int lw2len = 1
+        cdef int rw2len = 1
+        cdef int lw3len = 1
+        cdef int rw3len = 1
+        cdef int lw4len = 1
+        cdef int rw4len = 1
+        cdef int bowlen = 1
+        cdef int clen = 10
 
         cdef example next_example
         cdef processed_sentence_v2 sentence
@@ -2054,18 +2080,15 @@ class batch_constructor_v2:
         cdef int cnt = 0
         cdef int n
         cdef string phrase
+        cdef int phrase_cpy_len
+        cdef int [:] phrase_view
 
-
-        batch_buff = numpy.ndarray(
-            (12, n_batch_size, 32),
-            numpy.int32
-        )
-        cdef int[:,:,:] buff_view = batch_buff
 
         gaz_buff = numpy.zeros(
             (n_batch_size, 1 + self.n_label_type),
             dtype = numpy.float32
         )
+        cdef float[:,:] gaz_view = gaz_buff
 
         has_char_feature = feature_choice & (64 | 128 | 512 | 1024)
         assert not has_char_feature or self.language != 'cmn', \
@@ -2111,101 +2134,105 @@ class batch_constructor_v2:
 
             if self.language != 'cmn':
                 phrase = ' '.join( sentence.sentence[begin_idx:end_idx] )
+                phrase_array = numpy.asarray(
+                    [ ord(c) for c in list(phrase) ],
+                    dtype = numpy.int32
+                )
+                phrase_view = phrase_array
+
+            if feature_choice & 256 > 0:
+                gaz_view[cnt][next_example.gazetteer] = 1
 
             with nogil:
-                for j in range( 12 ):
-                    for k in range( 32 ):
-                        buff_view[j,cnt,k] = 2054
+                label.push_back( next_example.label )
 
-            #     label.push_back( next_example.label )
+                if feature_choice & (512 | 64) > 0:
+                    phrase_cpy_len = context_limit * 2 - 2
+                    if phrase_view.shape[0] < phrase_cpy_len:
+                        phrase_cpy_len = phrase_view.shape[0]
+                    lcv[cnt][1: 1 + phrase_cpy_len] = phrase_view[:phrase_cpy_len]
+                    if phrase_cpy_len + 2 > clen:
+                        clen = phrase_cpy_len + 2
 
-            #     if feature_choice & (512 | 64) > 0:
-            #         if phrase.size() + 2 > phrase_max_length:
-            #             phrase_max_length = phrase.size() + 2
-            #         char_buff.clear()
-            #         char_buff.push_back( 0 )
-            #         for k in range( phrase.size() ):
-            #             char_buff.push_back( <int>phrase[k] )
-            #         char_buff.push_back( 0 )
-            #         lc.push_back( char_buff )
+                if feature_choice & 64 > 0:
+                    rcv[cnt][1: 1 + phrase_cpy_len] = phrase_view[::-1][:phrase_cpy_len]
 
-            #     if feature_choice & 64 > 0:
-            #         reverse( char_buff.begin(), char_buff.end() )
-            #         rc.push_back( char_buff )
+            if feature_choice & 1 > 0:
+                lw1len = max( lw1len, sentence.insert_left( end_idx - 1, lw1[cnt] ) )
+                rw1len = max( rw1len, sentence.insert_right( begin_idx, rw1[cnt] ) )
 
-            # if feature_choice & 256 > 0:
-            #     gaz_buff[cnt] = next_example.gazetteer
+            if feature_choice & 2 > 0:
+                lw2len = max( lw2len, sentence.insert_left( begin_idx - 1, lw2[cnt] ) )
+                rw2len = max( rw2len, sentence.insert_right( end_idx, rw2[cnt] ) )
 
-            # if feature_choice & 1 > 0:
-            #     sentence.insert_left( end_idx - 1, lw1 )
-            #     sentence.insert_right( begin_idx, rw1 )
-
-            # if feature_choice & 2 > 0:
-            #     sentence.insert_left( begin_idx - 1, lw2 )
-            #     sentence.insert_right( end_idx, rw2 )
-
-            # if feature_choice & 4 > 0:
-            #     sentence.insert_bow( begin_idx, end_idx, bow1 )
+            if feature_choice & 4 > 0:
+                bowlen = max( bowlen, sentence.insert_bow( begin_idx, end_idx, bow1[cnt] ) )
 
             sentence = self.sentence2[next_example.sentence_id]
 
-            # if feature_choice & 8 > 0:
-            #     sentence.insert_left( end_idx - 1, lw3 )
-            #     sentence.insert_right( begin_idx, rw3 )
+            if feature_choice & 8 > 0:
+                lw3len = max( lw3len, sentence.insert_left( end_idx - 1, lw3[cnt] ) )
+                rw3len = max( rw3len, sentence.insert_right( begin_idx, rw3[cnt] ) )
 
-            # if feature_choice & 16 > 0:
-            #     sentence.insert_left( begin_idx - 1, lw4 )
-            #     sentence.insert_right( end_idx, rw4 )
+            if feature_choice & 16 > 0:
+                lw4len = max( lw4len, sentence.insert_left( begin_idx - 1, lw4[cnt] ) )
+                rw4len = max( rw4len, sentence.insert_right( end_idx, rw4[cnt] ) )
 
-            # if feature_choice & 32 > 0:
-            #     sentence.insert_bow( begin_idx, end_idx, bow2 )
+            if feature_choice & 32 > 0:
+                bowlen = max( bowlen, sentence.insert_bow( begin_idx, end_idx, bow2[cnt] ) )
 
             cnt += 1
             if cnt % n_batch_size == 0 or (i + 1) == len(candidate):
-                yield i + 1
-                # yield {
-                #     'word' : {
-                #         'case-insensitive' : {
-                #             'left-incl' : lw1,
-                #             'right-incl' : rw1,
-                #             'left-excl' : lw2,
-                #             'right-excl' : rw2,
-                #             'bow' : bow1
-                #         },
-                #         'case-sensitive' : {
-                #             'left-incl' : lw3,
-                #             'right-incl' : rw3,
-                #             'left-excl' : lw4,
-                #             'right-excl' : rw4,
-                #             'bow' : bow2
-                #         }
-                #     },
-                #     'char' : {
-                #         'left' : lc,
-                #         'right' : rc
-                #     },
-                #     'gaz' : gaz_buff[:cnt,:],
-                #     'target' : label
-                # }
+                yield {
+                    'word' : {
+                        'case-insensitive' : {
+                            'left-incl' : lw1[:cnt,:lw1len],
+                            'right-incl' : rw1[:cnt,:rw1len],
+                            'left-excl' : lw2[:cnt,:lw2len],
+                            'right-excl' : rw2[:cnt,:rw2len],
+                            'bow' : bow1[:cnt,:bowlen]
+                        },
+                        'case-sensitive' : {
+                            'left-incl' : lw3[:cnt,:lw3len],
+                            'right-incl' : rw3[:cnt,:rw3len],
+                            'left-excl' : lw4[:cnt,:lw4len],
+                            'right-excl' : rw4[:cnt,:rw4len],
+                            'bow' : bow2[:cnt,:bowlen]
+                        }
+                    },
+                    'char' : {
+                        'left' : lc[:cnt,:clen],
+                        'right' : rc[:cnt,clen]
+                    },
+                    'gaz' : gaz_buff[:cnt,:],
+                    'target' : label[:cnt]
+                }
 
                 with nogil:
-                    lw1.clear()
-                    rw1.clear()
-                    max_length1 = 1
-                    lw2.clear()
-                    rw2.clear()
-                    max_length2 = 1
-                    lw3.clear()
-                    rw3.clear()
-                    max_length3 = 1
-                    lw4.clear()
-                    rw4.clear()
-                    max_length4 = 1
-                    bow1.clear()
-                    bow2.clear()
-                    max_length5 = 1
+                    lw1len = 1
+                    rw1len = 1
+                    lw2len = 1
+                    rw2len = 1
+                    lw3len = 1
+                    rw3len = 1
+                    lw4len = 1
+                    rw4len = 1
+                    bowlen = 1
+                    clen = 10
                     label.clear()
                     cnt = 0
+                    lw1v[:,:] = -1
+                    rw1v[:,:] = -1
+                    lw2v[:,:] = -1
+                    rw2v[:,:] = -1
+                    lw3v[:,:] = -1
+                    rw3v[:,:] = -1
+                    lw4v[:,:] = -1
+                    rw4v[:,:] = -1
+                    bow1v[:,:] = -1
+                    bow2v[:,:] = -1
+                    lcv[:,:] = 127
+                    rcv[:,:] = 127
 
 
     def __str__( self ):
