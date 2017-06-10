@@ -1832,12 +1832,13 @@ cdef class processed_sentence_v2:
                     right_context.push_back( idx )
                     self.right2nd.push_back( right_context ) 
 
+                reverse( self.left2nd.begin(), self.left2nd.end() )
                 reverse( self.right2nd.begin(), self.right2nd.end() )
 
 
     @cython.boundscheck(False)
     cdef int insert_left( self, int pos, int[:] context ) nogil:
-        cdef int i
+        cdef int i, j
         cdef int length = context.shape[0]
         if self.is_2nd_pass:
             if self.left2nd[pos].size() < length:
@@ -1848,6 +1849,7 @@ cdef class processed_sentence_v2:
             if pos + 1 < length:
                 length = pos + 1
             for i in range(length):
+                j = length - i - 1
                 context[i] = self.numeric[i]
         return length
 
@@ -1892,6 +1894,9 @@ class batch_constructor_v2:
                   is_2nd_pass = False ):
         assert language in { 'eng', 'cmn', 'spa' }
         self.language = language
+
+        self.pad1 = numericizer1.padding_index()
+        self.pad2 = numericizer2.padding_index()
 
         # case-insensitive sentence set if language in { 'eng', 'spa' }
         # sequence at char level
@@ -2033,6 +2038,9 @@ class batch_constructor_v2:
                     bint replace = False, int n_copy = 1,
                     int context_limit = 64 ):
 
+        cdef int pad1 = self.pad1
+        cdef int pad2 = self.pad2
+
         lw1, rw1, lw2, rw2, lw3, rw3, lw4, rw4, \
         bow1, bow2 = [
             numpy.ones(
@@ -2047,6 +2055,11 @@ class batch_constructor_v2:
             ) * 127 for _ in xrange(2)
         ]
 
+        label = numpy.ndarray(  
+            (n_batch_size,),
+            numpy.int32
+        )
+
         cdef int[:,:] lw1v = lw1
         cdef int[:,:] rw1v = rw1
         cdef int[:,:] lw2v = lw2
@@ -2059,8 +2072,19 @@ class batch_constructor_v2:
         cdef int[:,:] bow2v = bow2
         cdef int[:,:] lcv = lc
         cdef int[:,:] rcv = rc
+        cdef int[:] label_view = label
         lcv[:,:] = 127
         rcv[:,:] = 127
+        lw1v[:,:] = pad1
+        rw1v[:,:] = pad1
+        lw2v[:,:] = pad1
+        rw2v[:,:] = pad1
+        bow1v[:,:] = pad1
+        lw3v[:,:] = pad2
+        rw3v[:,:] = pad2
+        lw4v[:,:] = pad1
+        rw4v[:,:] = pad2
+        bow2v[:,:] = pad2
 
         cdef int lw1len = 1
         cdef int rw1len = 1
@@ -2075,7 +2099,6 @@ class batch_constructor_v2:
 
         cdef example next_example
         cdef processed_sentence_v2 sentence
-        cdef vector[int] label
         cdef int i, j, k, begin_idx, end_idx
         cdef int cnt = 0
         cdef int n
@@ -2144,7 +2167,7 @@ class batch_constructor_v2:
                 gaz_view[cnt][next_example.gazetteer] = 1
 
             with nogil:
-                label.push_back( next_example.label )
+                label_view[cnt] = next_example.label
 
                 if feature_choice & (512 | 64) > 0:
                     phrase_cpy_len = context_limit * 2 - 2
@@ -2181,31 +2204,31 @@ class batch_constructor_v2:
             if feature_choice & 32 > 0:
                 bowlen = max( bowlen, sentence.insert_bow( begin_idx, end_idx, bow2[cnt] ) )
 
-            cnt += 1
+            cnt += 1 
             if cnt % n_batch_size == 0 or (i + 1) == len(candidate):
                 yield {
                     'word' : {
                         'case-insensitive' : {
-                            'left-incl' : lw1[:cnt,:lw1len],
-                            'right-incl' : rw1[:cnt,:rw1len],
-                            'left-excl' : lw2[:cnt,:lw2len],
-                            'right-excl' : rw2[:cnt,:rw2len],
-                            'bow' : bow1[:cnt,:bowlen]
+                            'left-incl' : lw1[:cnt,:lw1len].copy(),
+                            'right-incl' : rw1[:cnt,:rw1len].copy(),
+                            'left-excl' : lw2[:cnt,:lw2len].copy(),
+                            'right-excl' : rw2[:cnt,:rw2len].copy(),
+                            'bow' : bow1[:cnt,:bowlen].copy()
                         },
                         'case-sensitive' : {
-                            'left-incl' : lw3[:cnt,:lw3len],
-                            'right-incl' : rw3[:cnt,:rw3len],
-                            'left-excl' : lw4[:cnt,:lw4len],
-                            'right-excl' : rw4[:cnt,:rw4len],
-                            'bow' : bow2[:cnt,:bowlen]
+                            'left-incl' : lw3[:cnt,:lw3len].copy(),
+                            'right-incl' : rw3[:cnt,:rw3len].copy(),
+                            'left-excl' : lw4[:cnt,:lw4len].copy(),
+                            'right-excl' : rw4[:cnt,:rw4len].copy(),
+                            'bow' : bow2[:cnt,:bowlen].copy()
                         }
                     },
                     'char' : {
-                        'left' : lc[:cnt,:clen],
-                        'right' : rc[:cnt,clen]
+                        'left' : lc[:cnt,:clen].copy(),
+                        'right' : rc[:cnt,:clen].copy()
                     },
-                    'gaz' : gaz_buff[:cnt,:],
-                    'target' : label[:cnt]
+                    'gaz' : gaz_buff[:cnt,:].copy(),
+                    'target' : label[:cnt].copy()
                 }
 
                 with nogil:
@@ -2219,18 +2242,17 @@ class batch_constructor_v2:
                     rw4len = 1
                     bowlen = 1
                     clen = 10
-                    label.clear()
                     cnt = 0
-                    lw1v[:,:] = -1
-                    rw1v[:,:] = -1
-                    lw2v[:,:] = -1
-                    rw2v[:,:] = -1
-                    lw3v[:,:] = -1
-                    rw3v[:,:] = -1
-                    lw4v[:,:] = -1
-                    rw4v[:,:] = -1
-                    bow1v[:,:] = -1
-                    bow2v[:,:] = -1
+                    lw1v[:,:] = pad1
+                    rw1v[:,:] = pad1
+                    lw2v[:,:] = pad1
+                    rw2v[:,:] = pad1
+                    bow1v[:,:] = pad1
+                    lw3v[:,:] = pad2
+                    rw3v[:,:] = pad2
+                    lw4v[:,:] = pad2
+                    rw4v[:,:] = pad2
+                    bow2v[:,:] = pad2
                     lcv[:,:] = 127
                     rcv[:,:] = 127
 
@@ -2244,5 +2266,44 @@ class batch_constructor_v2:
         return ('%d sentences, %d (positive), %d (overlap), %d (disjoint)' % 
                 (len(self.sentence1), 
                     self.positive.shape[0], self.overlap.shape[0], self.disjoint.shape[0]) )
+
+
+    def mini_batch_multi_thread( self, int n_batch_size, 
+                                 bint shuffle_needed = True, float overlap_rate = 0.36, 
+                                 float disjoint_rate = 0.08, int feature_choice = 255, 
+                                 bint replace = False, float timeout = -1, int n_copy = 1  ):
+        """
+        Same as self.mini_batch except that data preparation is done on the background
+        """
+        batch_generator = self.mini_batch( n_batch_size, shuffle_needed, 
+                                           overlap_rate, disjoint_rate,
+                                           feature_choice, replace )
+        batch_buffer = Queue( maxsize = 256 )
+        t = Thread( target = prepare_mini_batch, 
+                    args = ( batch_generator, batch_buffer, timeout if timeout > 0 else None ) )
+        t.daemon = True
+        t.start()
+        while True:
+            next_batch = batch_buffer.get( True, timeout if timeout > 0 else None )
+            if next_batch is not None:
+                yield next_batch
+            else:
+                break
+
+
+    def infinite_mini_batch_multi_thread( self, int n_batch_size, 
+                                          bint shuffle_needed = True, float overlap_rate = 0.36, 
+                                          float disjoint_rate = 0.08, int feature_choice = 255, 
+                                          bint replace = True, float timeout = -1, int n_copy = 10  ):
+        """
+        Same as self.mini_batch_multi_thread except that sampling is done infinitely.
+        """
+        while True:
+            for next_batch in self.mini_batch_multi_thread( n_batch_size, shuffle_needed, 
+                                                            overlap_rate, disjoint_rate,
+                                                            feature_choice, replace, timeout, n_copy ):
+                if next_batch[-1].shape[0] == n_batch_size:
+                    yield next_batch
+
 
 

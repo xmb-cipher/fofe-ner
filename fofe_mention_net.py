@@ -22,7 +22,7 @@ from gigaword2feature import *
 from LinkingUtil import *
 
 from tqdm import tqdm
-from itertools import ifilter, izip, imap
+from itertools import ifilter, izip, imap, product
 from random import choice
 
 logger = logging.getLogger( __name__ )
@@ -85,6 +85,7 @@ class mention_config( object ):
         self.l1 = 0
         self.l2 = 0
         self.n_pattern = 0
+        self.optimizer = "momentum"
 
         # KBP-specific config
         self.language = 'eng'
@@ -971,4 +972,544 @@ class fofe_mention_net( object ):
 
 
 ########################################################################
+
+class fofe_mention_net_v2( object ):
+    def __init__( self, config = None, gpu_option = 0.9,
+                  word_alpha = 0.5, char_alpha = 0.8 ):
+        self.word_alpha = numpy.float32(word_alpha)
+        self.char_alpha = numpy.float32(char_alpha)
+
+        self.config = mention_config()
+        if config is not None:
+            self.config.__dict__.update( config.__dict__ )
+
+        self.graph = tf.Graph()
+
+        if gpu_option is not None:
+            gpu_option = tf.GPUOptions( 
+                per_process_gpu_memory_fraction = gpu_option 
+            )
+            self.session = tf.Session( 
+                config = tf.ConfigProto( 
+                    gpu_options = gpu_option 
+                ),
+                graph = self.graph 
+            )
+        else:
+            self.session = tf.Session( graph = self.graph )
+
+
+        projection1, projection2 = self.__LoadEmbed()
+
+        if self.config.is_2nd_pass:
+            self.pad1 = self.n_word1 - self.config.n_label_type - 2 # case-insensitive
+            self.pad2 = self.n_word2 - self.config.n_label_type - 3 # case-sensitive
+        else:
+            self.pad1 = self.n_word1 - 2
+            self.pad2 = self.n_word2 - 3
+
+        n_in, n_out = self.__DetermineLayerSize()
+        logger.info( 'n_in: ' + str(n_in) )
+        logger.info( 'n_out: ' + str(n_out) )
+
+        with self.graph.as_default():
+            self.__InitPlaceHolder()
+            logger.info( 'placeholder(s) created' )
+
+            self.__InitConnection( projection1, projection2, n_in, n_out )
+            logger.info( 'network connected' )
+
+            self.__InitOptimizer()
+            logger.info( 'optimizer defined' )
+
+            init_op = tf.global_variables_initializer()
+            logger.info( 'model initialized' )
+
+            self.saver = tf.train.Saver()
+
+        self.session.run( init_op )
+
+
+    def __del__( self ):
+        self.session.close()
+        logger.info( 'model released' )
+
+
+
+    def __LoadEmbed( self ):
+        eng_path1 = self.config.word_embedding + '-case-insensitive.word2vec' 
+        eng_path2 = self.config.word_embedding + '-case-sensitive.word2vec'
+        cmn_path1 = self.config.word_embedding + '-char.word2vec'
+        cmn_path2 = self.config.word_embedding + \
+                    ('-avg.word2vec' if self.config.average else '-word.word2vec')
+
+        if os.path.exists( eng_path1 ) and os.path.exists( eng_path2 ):
+            projection1 = load_word_embedding( eng_path1 )
+            projection2 = load_word_embedding( eng_path2 )
+
+            self.n_word1 = projection1.shape[0]
+            self.n_word2 = projection2.shape[0]
+
+            n_word_embedding1 = projection1.shape[1]
+            n_word_embedding2 = projection2.shape[1]
+
+            self.config.n_word1 = self.n_word1
+            self.config.n_word2 = self.n_word2
+            self.config.n_word_embedding1 = n_word_embedding1
+            self.config.n_word_embedding2 = n_word_embedding2
+            logger.info( 'non-Chinese embeddings loaded' )
+
+        elif os.path.exists( cmn_path1 ) and os.path.exists( cmn_path2 ):
+
+            projection1 = load_word_embedding( cmn_path1 )
+            projection2 = load_word_embedding( cmn_path2 )
+
+            self.n_word1 = projection1.shape[0]
+            self.n_word2 = projection2.shape[0]
+
+            n_word_embedding1 = projection1.shape[1]
+            n_word_embedding2 = projection2.shape[1]
+
+            self.config.n_word1 = self.n_word1
+            self.config.n_word2 = self.n_word2
+            self.config.n_word_embedding1 = n_word_embedding1
+            self.config.n_word_embedding2 = n_word_embedding2
+            logger.info( 'Chinese embeddings loaded' )
+
+        else:
+            self.n_word1 = self.config.n_word1
+            self.n_word2 = self.config.n_word2
+            n_word_embedding1 = self.config.n_word_embedding1
+            n_word_embedding2 = self.config.n_word_embedding2
+
+            projection1 = numpy.random.uniform( 
+                -1, 1, 
+                (self.n_word1, n_word_embedding1) 
+            ).astype( numpy.float32 )
+            projection2 = numpy.random.uniform( 
+                -1, 1, 
+                (self.n_word2, n_word_embedding2) 
+            ).astype( numpy.float32 )
+            logger.info( 'embedding is randomly initialized' )
+
+        if self.config.is_2nd_pass:
+            logger.info( 'In 2nd pass, substitute the last few entries with label types.' )
+
+            projection1[-1 - n_label_type: -1, :] = numpy.random.uniform( 
+                    projection1.min(), 
+                    projection1.max(),
+                    (n_label_type, n_word_embedding1) 
+            ).astype( numpy.float32 )
+
+            sub = numpy.random.uniform( 
+                projection2.min(), 
+                projection2.max(),
+                (n_label_type, n_word_embedding2) 
+            ).astype( numpy.float32 )
+
+            if self.config.language == 'cmn':
+                projection2[-1 - n_label_type: -1, :] = sub
+            else:
+                projection2[-2 - n_label_type: -2, :] = sub
+
+        return projection1, projection2
+
+
+
+    def __DetermineLayerSize( self ):
+        in1 = 0
+        for ith, name in enumerate( [
+            'case-insensitive bidirectional-context-with-focus', \
+             'case-insensitive bidirectional-context-without-focus', \
+             'case-insensitive focus-bow', \
+             'case-sensitive bidirectional-context-with-focus', \
+             'case-sensitive bidirectional-context-without-focus', \
+             'case-sensitive focus-bow', \
+             'left-char & right-char', 'left-initial & right-initial', \
+             'gazetteer', 'char-conv', 'char-bigram' 
+        ] ):
+            if (1 << ith) & self.config.feature_choice > 0: 
+                logger.info( '%s used' % name )
+                if ith in [0, 1]:
+                    in1 += self.config.n_word_embedding1 * 2
+                elif ith in [3, 4]:
+                    in1 += self.config.n_word_embedding2 * 2
+                elif ith == 2:
+                    in1 += self.config.n_word_embedding1
+                elif ith == 5:
+                    in1 += self.config.n_word_embedding1
+                # elif ith in [6, 7]:
+                elif ith == 6:
+                    in1 += self.config.n_char_embedding * 2
+                elif ith == 8: 
+                    in1 += self.config.n_ner_embedding
+                elif ith == 9:
+                    in1 += sum( self.config.kernel_depth )
+                # elif ith == 10:
+                #     in1 += self.config.n_char_embedding * 2
+
+        n_in = [ in1 ] + [ int(s) for s in self.config.layer_size.split(',') ]
+        n_out = n_in[1:] + [ self.config.n_label_type + 1 ]
+
+        return n_in, n_out
+
+
+
+    def __InitPlaceHolder( self ):
+        name_list = [ '%s/%s-context/%s-text-fragment' % (x, z, y) for (x, y, z) in product(
+            ['case-insensitive', 'case-sensitive'], 
+            ['including', 'excluding'], 
+            ['left', 'right']
+        )] + [
+            'case-insensitive/bow', 'case-sensitive/bow', 
+            'right-padded-char', 'right-padded-char'
+        ]
+
+        self.lw1, self.rw1, self.lw2, self.rw2, \
+        self.lw3, self.rw3, self.lw4, self.rw4, \
+        self.bow1, self.bow2, self.lc, self.rc = [
+            tf.placeholder(
+                tf.int32,
+                [None, None],
+                name = x
+            ) for x in name_list 
+        ]
+
+        self.gaz = tf.placeholder( 
+            tf.float32, 
+            [None, self.config.n_label_type + 1], 
+            name = 'gazetteer' 
+        )
+
+        self.keep_prob = tf.placeholder( tf.float32, [], name = 'keep-prob' )
+        self.target = tf.placeholder( tf.int32, [None], name = 'target' )
+        self.lr = tf.placeholder( tf.float32, [], name = 'learning-rate' )
+
+
+    def __InitConnection( self, projection1, projection2, n_in, n_out ):
+        self.word_alpha = tf.constant( 
+            numpy.tile(
+                self.word_alpha ** numpy.arange(256), 
+                [2048, 1]
+            ),
+            dtype = tf.float32 
+        )
+        self.char_alpha = tf.constant( 
+            numpy.tile(
+                self.char_alpha ** numpy.arange(512), 
+                [2048, 1]
+            ),
+            dtype = tf.float32 
+        )
+
+        self.word_embed1 = tf.Variable( projection1 )
+        self.word_embed2 = tf.Variable( projection2 )
+
+        rng = numpy.float32( numpy.sqrt(
+            6. / (self.config.n_char + self.config.n_char_embedding )
+        ) )
+        self.char_embed, self.conv_embed = [
+            tf.Variable( tf.random_uniform(
+                [self.config.n_char, self.config.n_char_embedding],
+                minval = -rng,
+                maxval = rng
+            ) ) for _ in xrange(2)
+        ]
+
+        rng = numpy.float32( numpy.sqrt(
+            6. / (self.config.n_label_type + self.config.n_ner_embedding )
+        ) )
+        self.ner_embed = tf.Variable( tf.random_uniform( 
+            [self.config.n_label_type + 1, self.config.n_ner_embedding], 
+            minval = -rng, 
+            maxval = rng 
+        ) )
+
+        self.kernels = [ 
+            tf.Variable( tf.random_uniform( 
+                [h, self.config.n_char_embedding, 1, d], 
+                minval = -numpy.sqrt(
+                    6./ (1 + h * self.config.n_char_embedding * d)
+                ), 
+                maxval = numpy.sqrt(
+                    6./ (1 + h * self.config.n_char_embedding * d)
+                ) 
+            ) ) for (h, d) in zip( 
+                self.config.kernel_height, 
+                self.config.kernel_depth 
+            ) 
+        ]
+
+        self.bias_k = [ tf.Variable( tf.zeros( [d] ) ) for d in self.config.kernel_depth ]
+
+        self.W, self.bias_w = [], []
+        for i, o in zip( n_in, n_out ):
+            rng = numpy.float32( numpy.sqrt(6./ (i + o)) )
+            self.W.append(
+                tf.Variable( tf.random_uniform( 
+                    [i, o],
+                    minval = -rng,
+                    maxval = rng
+                ) )
+            )
+            self.bias_w.append( tf.Variable( tf.zeros([o]) ) )
+
+
+        def fofe( context, alpha, embed ):
+            batch_size, context_size = tf.unstack( tf.shape( context ) )
+            result = tf.squeeze( 
+                tf.matmul( 
+                    tf.reshape( 
+                        alpha[:batch_size, :context_size], 
+                        [batch_size, 1, -1] 
+                    ),
+                    tf.gather( embed, context ) ), 
+                axis = [1] 
+            )
+            return result
+
+        lw1p, rw1p, lw2p, rw2p = [ fofe( 
+                x, self.word_alpha, self.word_embed1 
+            ) for x in [ self.lw1, self.rw1, self.lw2, self.rw2 ] 
+        ]
+
+        lw3p, rw3p, lw4p, rw4p = [ fofe( 
+                x, self.word_alpha, self.word_embed2 
+            ) for x in [ self.lw3, self.rw3, self.lw4, self.rw4 ] 
+        ]
+
+        def bow( words, embed ):
+            # batch_size, bow_size = tf.unstack( tf.shape( words ) )
+            result = tf.reduce_sum( 
+                tf.gather( embed, words ), 
+                axis = [1] 
+            )
+            return result
+
+        bow1p = bow( self.bow1, self.word_embed1 )
+        bow2p = bow( self.bow2, self.word_embed2 )
+
+        lcp = fofe( self.lc, self.char_alpha, self.char_embed )
+        rcp = fofe( self.rc, self.char_alpha, self.char_embed )
+        gazp = tf.matmul( self.gaz, self.ner_embed )
+
+        char_cube = tf.expand_dims( 
+            tf.gather( self.conv_embed, self.lc ), 
+            3 
+        )
+        char_conv = [ 
+            tf.reduce_max( 
+                tf.nn.tanh( 
+                    tf.nn.conv2d( 
+                        char_cube, 
+                        kk, 
+                        [1, 1, 1, 1], 
+                        'VALID' 
+                    ) + bb 
+                ),
+                axis = [1, 2] 
+            ) for kk,bb in zip( self.kernels, self.bias_k) 
+        ]
+
+        feature_list = [ 
+            [lw1p, rw1p], [lw2p, rw2p], [bow1p],
+            [lw3p, rw3p], [lw4p, rw4p], [bow2p],
+            [lcp, rcp], [], [gazp], char_conv, [] 
+        ]
+        used, not_used = [], []
+        for ith, f in enumerate( feature_list ):
+            if (1 << ith) & self.config.feature_choice > 0: 
+                used.extend( f )
+            else:
+                not_used.extend( f )
+        feature_list = used
+
+        feature = tf.concat( feature_list, 1 )
+
+        layer_output = [ tf.nn.dropout( feature, self.keep_prob ) ]
+
+        for i in xrange( len(self.W) ):
+            layer_output.append( tf.matmul( layer_output[-1], self.W[i] ) + self.bias_w[i] )
+            if i < len(self.W) - 1:
+                layer_output[-1] = tf.nn.relu( layer_output[-1] )
+                layer_output[-1] = tf.nn.dropout( layer_output[-1], self.keep_prob )
+
+        self.xent = tf.reduce_mean( 
+            tf.nn.sparse_softmax_cross_entropy_with_logits( 
+                logits = layer_output[-1], 
+                labels = self.target
+            ) 
+        ) + self.config.l2 * tf.nn.l2_loss(self.word_embed1[self.pad1]) \
+          + self.config.l2 * tf.nn.l2_loss(self.word_embed2[self.pad2])
+
+        self.predicted_values = tf.nn.softmax( layer_output[-1] )
+        self.predicted_indices = tf.argmax( layer_output[-1], axis = 1 )
+
+
+    def __InitOptimizer( self ):
+        feature_choice = self.config.feature_choice
+        momentum = self.config.momentum
+
+        momentum_step, adam_step = [], []
+
+        if feature_choice & 0b111 > 0:
+            step = tf.train.GradientDescentOptimizer( 
+                learning_rate = self.lr / 4, 
+                use_locking = True 
+            ).minimize( self.xent, var_list = [ self.word_embed1 ] )
+            momentum_step.append( step )
+            adam_step.append( step )
+
+        if feature_choice & (0b111 << 3) > 0:
+            step = tf.train.GradientDescentOptimizer( 
+                learning_rate = self.lr / 4, 
+                use_locking = True 
+            ).minimize( self.xent, var_list = [ self.word_embed2 ] )
+            momentum_step.append( step )
+            adam_step.append( step )
+
+        if feature_choice & (1 << 6) > 0:
+            step = tf.train.GradientDescentOptimizer( 
+                learning_rate = self.lr / 2, 
+                use_locking = True 
+            ).minimize( self.xent, var_list = [ self.char_embed ] )
+            momentum_step.append( step )
+            adam_step.append( step )
+
+        if feature_choice & (1 << 8) > 0:
+            step = tf.train.GradientDescentOptimizer( 
+                learning_rate = self.lr, 
+                use_locking = True 
+            ).minimize( self.xent, var_list = [ self.ner_embed ] )
+            momentum_step.append( self.ner_embed )
+            adam_step.append( step )
+
+        if feature_choice & (1 << 9) > 0:
+            step = tf.train.MomentumOptimizer( 
+                self.lr, momentum 
+            ).minimize( 
+                self.xent, 
+                var_list = [ self.conv_embed ] + self.kernels + self.bias_k )
+            momentum_step.append( step )
+
+            step = tf.train.AdamOptimizer(
+                learning_rate = self.lr,
+                epsilon = 0.01
+            ).minimize( 
+                self.xent, 
+                var_list = [ self.conv_embed ] + self.kernels + self.bias_k 
+            )
+            adam_step.append( step )
+
+        step = tf.train.MomentumOptimizer( 
+            self.lr, momentum 
+        ).minimize( 
+            self.xent, 
+            var_list = self.W + self.bias_w 
+        )
+        momentum_step.append( step )
+
+        step = tf.train.AdamOptimizer(
+            learning_rate = self.lr,
+            epsilon = 0.01
+        ).minimize( 
+            self.xent, 
+            var_list = self.W + self.bias_w 
+        )
+        adam_step.append( step )
+
+        self.momentum_step = momentum_step
+        self.adam_step = adam_step
+
+
+    def train( self, mini_batch ):
+        if self.config.optimizer == 'momentum':
+            train_step = self.momentum_step 
+        elif self.config.optimizer == 'adam':
+            train_step = self.adam_step
+        else:
+            raise NotImplementedError( 'hopelessness is your end' ) 
+
+        cost = self.session.run(
+            self.momentum_step + [ self.xent ],
+            feed_dict = {
+                self.lr : self.config.learning_rate,
+                self.keep_prob : 1 - self.config.drop_rate,
+                self.lw1 : mini_batch['word']['case-insensitive']['left-incl'],
+                self.rw1 : mini_batch['word']['case-insensitive']['right-incl'],
+                self.lw2 : mini_batch['word']['case-insensitive']['left-excl'],
+                self.rw2 : mini_batch['word']['case-insensitive']['right-excl'],
+                self.lw3 : mini_batch['word']['case-sensitive']['left-incl'],
+                self.rw3 : mini_batch['word']['case-sensitive']['right-incl'],
+                self.lw4 : mini_batch['word']['case-sensitive']['left-excl'],
+                self.rw4 : mini_batch['word']['case-sensitive']['right-excl'],
+                self.bow1 : mini_batch['word']['case-insensitive']['bow'],
+                self.bow2 : mini_batch['word']['case-sensitive']['bow'],
+                self.lc : mini_batch['char']['left'],
+                self.rc : mini_batch['char']['right'],
+                self.gaz : mini_batch['gaz'],
+                self.target : mini_batch['target']
+            }
+        )
+        return cost[-1]
+
+
+    def eval( self, mini_batch ):
+        c, pi, pv = self.session.run(
+            [ self.xent, self.predicted_indices, self.predicted_values ],
+            feed_dict = {
+                self.keep_prob : 1,
+                self.lw1 : mini_batch['word']['case-insensitive']['left-incl'],
+                self.rw1 : mini_batch['word']['case-insensitive']['right-incl'],
+                self.lw2 : mini_batch['word']['case-insensitive']['left-excl'],
+                self.rw2 : mini_batch['word']['case-insensitive']['right-excl'],
+                self.lw3 : mini_batch['word']['case-sensitive']['left-incl'],
+                self.rw3 : mini_batch['word']['case-sensitive']['right-incl'],
+                self.lw4 : mini_batch['word']['case-sensitive']['left-excl'],
+                self.rw4 : mini_batch['word']['case-sensitive']['right-excl'],
+                self.bow1 : mini_batch['word']['case-insensitive']['bow'],
+                self.bow2 : mini_batch['word']['case-sensitive']['bow'],
+                self.lc : mini_batch['char']['left'],
+                self.rc : mini_batch['char']['right'],
+                self.gaz : mini_batch['gaz'],
+                self.target : mini_batch['target']
+            }
+        )
+        return c, pi, pv
+
+
+
+    def tofile( self, filename ):
+        """
+        Parameters
+        ----------
+            filename : str
+                The current model will be stored in basename.{tf,config}
+        """
+        self.saver.save( self.session, filename )
+        with open( filename + '.config', 'wb' ) as fp:
+            cPickle.dump( self.config, fp )
+
+
+    def fromfile( self, filename ):
+        """
+            filename : str
+                The current model will be restored from basename.{tf,config}
+        """
+        self.saver.restore( self.session, filename )
+
+
+
+########################################################################
+
+
+if __name__ == '__main__':
+    config = mention_config()
+    mention_config.word_embedding = 'word2vec/reuters256'
+    mention_config.n_lable_type = 4
+
+    mention_net = fofe_mention_net_v2()
+
+
+
 

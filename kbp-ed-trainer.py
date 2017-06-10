@@ -221,20 +221,19 @@ if __name__ == '__main__':
     )
     logger.info( 'valid: ' + str(valid) )
     
-    # test = batch_constructor( 
-    #     imap( lambda x: x[:4], 
-    #           LoadED( config.data_path + '/%s-train-parsed' % config.language ) 
-    #     ),
-    #     numericizer1, 
-    #     numericizer2, 
-    #     gazetteer = kbp_gazetteer, 
-    #     alpha = config.word_alpha, 
-    #     window = config.n_window, 
-    #     n_label_type = config.n_label_type,
-    #     language = config.language,
-    #     is2ndPass = args.is_2nd_pass 
-    # )
-    test = train
+    test = batch_constructor( 
+        imap( lambda x: x[:4], 
+              LoadED( config.data_path + '/%s-train-parsed' % config.language ) 
+        ),
+        numericizer1, 
+        numericizer2, 
+        gazetteer = kbp_gazetteer, 
+        alpha = config.word_alpha, 
+        window = config.n_window, 
+        n_label_type = config.n_label_type,
+        language = config.language,
+        is2ndPass = args.is_2nd_pass 
+    )
     logger.info( 'test: ' + str(test) )
 
     logger.info( 'data set loaded' )

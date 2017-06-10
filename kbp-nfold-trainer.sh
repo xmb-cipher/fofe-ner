@@ -62,9 +62,9 @@ done
 INFO "kpb-data is processed"
 
 
-INFO "KBP_IFLYTEK == ${KBP_IFLYTEK}"
 if [ ! -z ${IFLYTEK+X} ]
 then
+    INFO "KBP_IFLYTEK == ${KBP_IFLYTEK}"
     iflytek_path=${dir}/iflytek
     cp -f -R -L ${KBP_IFLYTEK} ${iflytek_path}
     idx=0
@@ -94,7 +94,7 @@ then
 fi
 
 # DEBUG
-while true; do sleep 128; done
+# while true; do sleep 128; done
 
 INFO "training ... "
 
