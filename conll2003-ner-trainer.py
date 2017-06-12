@@ -74,7 +74,7 @@ if __name__ == '__main__':
     parser.add_argument( '--initialize_method', type = str, default = 'uniform',
                          choices = [ 'uniform', 'gaussian' ] )
     parser.add_argument( '--enable_distant_supervision', action = 'store_true', default = False )
-    parser.add_argument( '--model', type = str, default = 'hopeless' )
+    parser.add_argument( '--model', type = str, default = 'conll2003X' )
     parser.add_argument( '--offical_eval', action = 'store_true', default = False,
                          help = 'invoke official evaluator when true' )
     parser.add_argument( '--buffer_dir', type = str, default = None,
@@ -86,6 +86,7 @@ if __name__ == '__main__':
     parser.add_argument( '--l1', type = float, default = 0 )
     parser.add_argument( '--l2', type = float, default = 0 )
     parser.add_argument( '--n_pattern', type = int, default = 0 )
+    parser.add_argument( '--logfile', type = str, default = None )
 
     # TODO
     # these hyper parameters are from kbp-ed-trainer
@@ -94,11 +95,25 @@ if __name__ == '__main__':
     parser.add_argument( '--average', action = 'store_true', default = False )
     parser.add_argument( '--iflytek', action = 'store_true', default = False )
 
+    ################################################################################
+
+    args = parser.parse_args()
+
+    ################################################################################
+
     # set a logging file at DEBUG level, TODO: windows doesn't allow ":" appear in a file name
-    logging.basicConfig( format = '%(asctime)s : %(levelname)s : %(message)s', 
-                         level= logging.DEBUG,
-                         filename = ('log/conll2003 ' + time.ctime() + '.log').replace(' ', '-'), 
-                         filemode = 'w' )
+
+    if args.logfile is None:
+        logfile = ('log/conll2003 ' + time.ctime() + '.log').replace(' ', '-')
+    else:
+        logfile = args.logfile
+
+    logging.basicConfig( 
+        format = '%(asctime)s : %(levelname)s : %(message)s', 
+        level = logging.DEBUG,
+        filename = logfile, 
+        filemode = 'w' 
+    )
 
     # direct the INFO-level logging to the screen
     console = logging.StreamHandler()
@@ -108,7 +123,6 @@ if __name__ == '__main__':
 
     ################################################################################
 
-    args = parser.parse_args()
     logger.info( str(args) + '\n' )
 
     ################################################################################
@@ -146,7 +160,7 @@ if __name__ == '__main__':
     ################################################################################
 
     mention_net = fofe_mention_net( config, args.gpu_fraction )
-    mention_net.tofile( './conll2003-model/' + args.model )
+    mention_net.tofile( args.model )
 
     ########################################################################
 
@@ -350,7 +364,7 @@ if __name__ == '__main__':
         if args.offical_eval:
             cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d --config=%s ' \
                             % ( best_threshold, best_algorithm, config.n_window, 
-                                'conll2003-model/%s.config' % args.model ) ) + \
+                                '%s.config' % args.model ) ) + \
                   ('%s/eng.testa %s | conlleval' % (config.data_path, valid_file) )
             process = Popen( cmd, shell = True, stdout = PIPE, stderr = PIPE)
             (out, err) = process.communicate()
@@ -384,7 +398,7 @@ if __name__ == '__main__':
             best_test_fb1 = test_fb1
             mention_net.config.threshold = best_threshold
             mention_net.config.algorithm = best_algorithm
-            mention_net.tofile( './conll2003-model/' + args.model )
+            mention_net.tofile( args.model )
 
         # cmd = ('CoNLL2003eval.py --threshold=%f --algorithm=%d --n_window=%d --config=%s ' \
         #                 % ( best_threshold, best_algorithm, config.n_window,

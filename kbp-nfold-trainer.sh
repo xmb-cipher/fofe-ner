@@ -102,8 +102,8 @@ PROCESSED_DATA=$(for i in $(seq 0 4); do printf "${dir}/split-${i} "; done)
 MODEL=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/kbp-split-${j} "; done)
 LOG_FILE=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/kbp-split-${j}.log "; done)
 
-# SERVER_LIST=`ServerList | tail -5 | tr '\n' ',' | sed s'/,$//'`
-SERVER_LIST="ea31,ea32,ea33,ea34,ea35"
+SERVER_LIST=`ServerList | tail -5 | tr '\n' ',' | sed s'/,$//'`
+# SERVER_LIST="ea31,ea32,ea33,ea34,ea35"
 
 INFO "5 trainers are running on ${SERVER_LIST}"
 

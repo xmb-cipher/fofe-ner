@@ -62,29 +62,30 @@ def KBP2015( filename ):
     buffer_stack.resize( 10 )
 
     logger.info( 'According to Liu, TTL_NAM are all labeled as PER_NOM.' )
-    entity2cls = {  # KBP2015 label
-                    'PER_NAM' : 0, 
-                    'PER_NOM' : 5, 
-                    'ORG_NAM' : 1, 
-                    'GPE_NAM' : 2, 
-                    'LOC_NAM' : 3, 
-                    'FAC_NAM' : 4, 
-                    'TTL_NAM' : 5,
+    entity2cls = {  
+        # KBP2015 label
+        'PER_NAM' : 0, 
+        'PER_NOM' : 5, 
+        'ORG_NAM' : 1, 
+        'GPE_NAM' : 2, 
+        'LOC_NAM' : 3, 
+        'FAC_NAM' : 4, 
+        'TTL_NAM' : 5,
 
-                    # iflytek label
-                    'PER_NAME' : 0,  
-                    'ORG_NAME' : 1, 
-                    'GPE_NAME' : 2, 
-                    'LOC_NAME' : 3, 
-                    'FAC_NAME' : 4, 
-                    'PER_NOMINAL' : 5,
-                    'ORG_NOMINAL' : 6,
-                    'GPE_NOMINAL' : 7,
-                    'LOC_NOMINAL' : 8,
-                    'FAC_NOMINAL' : 9,
-                    'TITLE_NAME' : 5,
-                    'TITLE_NOMINAL' : 5
-                } 
+        # iflytek label
+        'PER_NAME' : 0,  
+        'ORG_NAME' : 1, 
+        'GPE_NAME' : 2, 
+        'LOC_NAME' : 3, 
+        'FAC_NAME' : 4, 
+        'PER_NOMINAL' : 5,
+        'ORG_NOMINAL' : 6,
+        'GPE_NOMINAL' : 7,
+        'LOC_NOMINAL' : 8,
+        'FAC_NOMINAL' : 9,
+        'TITLE_NAME' : 5,
+        'TITLE_NOMINAL' : 5
+    } 
 
     with codecs.open( filename ) as text_file:
         for line in text_file:
@@ -1120,8 +1121,8 @@ class batch_constructor:
                             if conv_idx[k].size() > 128:
                                 conv_idx[k].resize( 128 )
 
-                # print 'i am right before yield statement, cnt = %d' % cnt
-
+                # they must be either copied for wrapped by asarray
+                # because of multithreding
                 yield   numpy.asarray( l1_values, dtype = numpy.float32 ),\
                         numpy.asarray( r1_values, dtype = numpy.float32 ),\
                         numpy.reshape( l1_indices, [-1, 2] ),\
@@ -1838,7 +1839,7 @@ cdef class processed_sentence_v2:
 
     @cython.boundscheck(False)
     cdef int insert_left( self, int pos, int[:] context ) nogil:
-        cdef int i, j
+        cdef int i
         cdef int length = context.shape[0]
         if self.is_2nd_pass:
             if self.left2nd[pos].size() < length:
@@ -1849,8 +1850,7 @@ cdef class processed_sentence_v2:
             if pos + 1 < length:
                 length = pos + 1
             for i in range(length):
-                j = length - i - 1
-                context[i] = self.numeric[i]
+                context[i] = self.numeric[pos - i]
         return length
 
         
@@ -2042,11 +2042,11 @@ class batch_constructor_v2:
         cdef int pad2 = self.pad2
 
         lw1, rw1, lw2, rw2, lw3, rw3, lw4, rw4, \
-        bow1, bow2 = [
+        bow1, bow2, linit, rinit = [
             numpy.ones(
                 (n_batch_size, context_limit),
                 numpy.int32
-            ) * (-1) for _ in xrange(10)
+            ) * (-1) for _ in xrange(12)
         ]
         lc, rc = [
             numpy.ones( 
@@ -2070,11 +2070,15 @@ class batch_constructor_v2:
         cdef int[:,:] rw4v = rw4
         cdef int[:,:] bow1v = bow1
         cdef int[:,:] bow2v = bow2
+        cdef int[:,:] linitv = linit
+        cdef int[:,:] rinitv = rinit
         cdef int[:,:] lcv = lc
         cdef int[:,:] rcv = rc
         cdef int[:] label_view = label
         lcv[:,:] = 127
         rcv[:,:] = 127
+        linitv[:,:] = 127
+        rinitv[:,:] = 127
         lw1v[:,:] = pad1
         rw1v[:,:] = pad1
         lw2v[:,:] = pad1
@@ -2105,6 +2109,7 @@ class batch_constructor_v2:
         cdef string phrase
         cdef int phrase_cpy_len
         cdef int [:] phrase_view
+        cdef int [:] initial_view
 
 
         gaz_buff = numpy.zeros(
@@ -2160,11 +2165,19 @@ class batch_constructor_v2:
                 phrase_array = numpy.asarray(
                     [ ord(c) for c in list(phrase) ],
                     dtype = numpy.int32
-                )
+                ) 
                 phrase_view = phrase_array
 
+                init_array = numpy.asarray(
+                    [ ord(c) for c in list( 
+                        ''.join( [ w[0] for w in sentence.sentence[begin_idx:end_idx] ] ) 
+                    ) ],
+                    dtype = numpy.int32
+                )
+                initial_view = init_array
+
             if feature_choice & 256 > 0:
-                gaz_view[cnt][next_example.gazetteer] = 1
+                gaz_buff[cnt][next_example.gazetteer] = 1
 
             with nogil:
                 label_view[cnt] = next_example.label
@@ -2204,6 +2217,12 @@ class batch_constructor_v2:
             if feature_choice & 32 > 0:
                 bowlen = max( bowlen, sentence.insert_bow( begin_idx, end_idx, bow2[cnt] ) )
 
+            if feature_choice & 128 > 0:
+                with nogil:
+                    for j in range( bowlen ):
+                        linitv[cnt][j] = initial_view[j]
+                        rinitv[cnt][j] = initial_view[bowlen - j - 1]
+
             cnt += 1 
             if cnt % n_batch_size == 0 or (i + 1) == len(candidate):
                 yield {
@@ -2225,7 +2244,9 @@ class batch_constructor_v2:
                     },
                     'char' : {
                         'left' : lc[:cnt,:clen].copy(),
-                        'right' : rc[:cnt,:clen].copy()
+                        'right' : rc[:cnt,:clen].copy(),
+                        'left-initial' : linit[:cnt,:bowlen].copy(),
+                        'right-initial' : rinit[:cnt,:bowlen].copy()
                     },
                     'gaz' : gaz_buff[:cnt,:].copy(),
                     'target' : label[:cnt].copy()
@@ -2255,6 +2276,8 @@ class batch_constructor_v2:
                     bow2v[:,:] = pad2
                     lcv[:,:] = 127
                     rcv[:,:] = 127
+                    linitv[:,:] = 127
+                    rinitv[:,:] = 127
 
 
     def __str__( self ):
@@ -2275,9 +2298,15 @@ class batch_constructor_v2:
         """
         Same as self.mini_batch except that data preparation is done on the background
         """
-        batch_generator = self.mini_batch( n_batch_size, shuffle_needed, 
-                                           overlap_rate, disjoint_rate,
-                                           feature_choice, replace )
+        batch_generator = self.mini_batch( 
+            n_batch_size, 
+            shuffle_needed, 
+            overlap_rate, 
+            disjoint_rate,
+            feature_choice, 
+            replace 
+        )
+
         batch_buffer = Queue( maxsize = 256 )
         t = Thread( target = prepare_mini_batch, 
                     args = ( batch_generator, batch_buffer, timeout if timeout > 0 else None ) )
@@ -2299,9 +2328,14 @@ class batch_constructor_v2:
         Same as self.mini_batch_multi_thread except that sampling is done infinitely.
         """
         while True:
-            for next_batch in self.mini_batch_multi_thread( n_batch_size, shuffle_needed, 
-                                                            overlap_rate, disjoint_rate,
-                                                            feature_choice, replace, timeout, n_copy ):
+            for next_batch in self.mini_batch_multi_thread( 
+                n_batch_size, shuffle_needed, 
+                overlap_rate, disjoint_rate,
+                feature_choice, 
+                replace, 
+                timeout, 
+                n_copy 
+            ):
                 if next_batch[-1].shape[0] == n_batch_size:
                     yield next_batch
 

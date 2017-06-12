@@ -72,6 +72,11 @@ function ServerList() {
     do 
         h=ea`printf "%02d" ${i}`
         ping -c 1 ${h} > /dev/null
-        [ $? -eq 0 ] && echo ${h}
+        if [ $? -eq 0 ] 
+        then
+            n_user=`ssh ${h} "who | cut -d' ' -f1 | sort | uniq | wc -l"`
+            k_mem=`ssh ${h} "head -1 /proc/meminfo | tr -s ' '  | cut -d' ' -f2"`
+            [ ${n_user} -eq 0 ] && [ ${k_mem} -gt 16000000 ] && echo ${h}
+        fi
     done
 }

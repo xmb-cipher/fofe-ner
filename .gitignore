@@ -3,6 +3,7 @@
 *.pyc
 *.so
 *.meta
+source/gigaword2feature.cpp
 
 # folder
 build
@@ -25,3 +26,9 @@ checkpoint
 
 # backup
 *.bak
+
+# OSX
+*DS_Store
+
+# debug-data
+questions-words.txt

@@ -3,12 +3,12 @@
 """
 Author      : Mingbin Xu (mingbin.xu@gmail.com)
 Filename    : fofe_mention_net.py
-Last Update : Jul 17, 2016
+Last Update : Jul 11, 2017
 Description : N/A
 Website     : https://wiki.eecs.yorku.ca/lab/MLL/
 
 Copyright (c) 2016 iNCML (author: Mingbin Xu)
-License: MIT License (see ../LICENSE)
+License: MIT License (see ./LICENSE)
 """
 
 
@@ -150,35 +150,34 @@ class fofe_mention_net( object ):
         initialize_method = config.initialize_method
         n_pattern = config.n_pattern
  
-        # if config is not None:
-        #     self.config = copy.deepcopy( config )
-        # else:
-        #     self.config = mention_config()
+
         self.config = mention_config()
         if config is not None:
             self.config.__dict__.update( config.__dict__ )
 
-
         self.graph = tf.Graph()
-        # TODO: create a graph instead of using default graph
-        #       otherwise, we cannot instantiate multiple fofe_mention_nets
-        # tf.reset_default_graph()
+
         if gpu_option is not None:
             gpu_option = tf.GPUOptions( per_process_gpu_memory_fraction = gpu_option )
-            self.session = tf.Session( config = tf.ConfigProto( 
-                                                gpu_options = gpu_option ),
-                                                # log_device_placement = True ),
-                                       graph = self.graph )
+            self.session = tf.Session( 
+                config = tf.ConfigProto( 
+                    gpu_options = gpu_option
+                    # log_device_placement = True
+                ),
+                graph = self.graph )
         else:
              self.session = tf.Session( graph = self.graph )
 
-        if os.path.exists( self.config.word_embedding + '-case-insensitive.word2vec' ) \
-            and os.path.exists( self.config.word_embedding + '-case-sensitive.word2vec' ):
+        eng_path1 = self.config.word_embedding + '-case-insensitive.word2vec'
+        eng_path2 = self.config.word_embedding + '-case-sensitive.word2vec'
+        cmn_path1 = self.config.word_embedding + '-char.word2vec'
+        cmn_path2 = self.config.word_embedding + \
+                ('-avg.word2vec' if self.config.average else '-word.word2vec')
 
-            projection1 = load_word_embedding( self.config.word_embedding + \
-                                               '-case-insensitive.word2vec' )
-            projection2 = load_word_embedding( self.config.word_embedding + \
-                                               '-case-sensitive.word2vec' )
+        if os.path.exists( eng_path1 ) and os.path.exists( eng_path2 ):
+
+            projection1 = load_word_embedding( eng_path1 )
+            projection2 = load_word_embedding( eng_path2 )
 
             self.n_word1 = projection1.shape[0]
             self.n_word2 = projection2.shape[0]
@@ -194,13 +193,10 @@ class fofe_mention_net( object ):
             self.config.n_word_embedding2 = n_word_embedding2
             logger.info( 'non-Chinese embeddings loaded' )
 
-        elif os.path.exists( self.config.word_embedding + '-char.word2vec' ) \
-            and os.path.exists( self.config.word_embedding + '-word.word2vec' ):
+        elif os.path.exists( cmn_path1 ) and os.path.exists( cmn_path2 ):
 
-            projection1 = load_word_embedding( self.config.word_embedding + \
-                                               '-char.word2vec' )
-            projection2 = load_word_embedding( self.config.word_embedding + \
-                            ('-avg.word2vec' if self.config.average else '-word.word2vec') )
+            projection1 = load_word_embedding( cmn_path1 )
+            projection2 = load_word_embedding( cmn_path2 )
 
             self.n_word1 = projection1.shape[0]
             self.n_word2 = projection2.shape[0]
@@ -220,10 +216,16 @@ class fofe_mention_net( object ):
             n_word_embedding1 = self.config.n_word_embedding1
             n_word_embedding2 = self.config.n_word_embedding2
 
-            projection1 = numpy.random.uniform( -1, 1, 
-                            (self.n_word1, n_word_embedding1) ).astype( numpy.float32 )
-            projection2 = numpy.random.uniform( -1, 1, 
-                            (self.n_word2, n_word_embedding2) ).astype( numpy.float32 )
+            projection1 = numpy.random.uniform( 
+                -1, 1, 
+                (self.n_word1, n_word_embedding1) 
+            ).astype( numpy.float32 )
+
+            projection2 = numpy.random.uniform( 
+                -1, 1, 
+                (self.n_word2, n_word_embedding2) 
+            ).astype( numpy.float32 )
+
             logger.info( 'embedding is randomly initialized' )
 
         if config.is_2nd_pass:
@@ -244,14 +246,16 @@ class fofe_mention_net( object ):
 
         # dimension of x in the HOPE paper
         hope_in = 0
-        for ith, name in enumerate( ['case-insensitive bidirectional-context-with-focus', \
-                                     'case-insensitive bidirectional-context-without-focus', \
-                                     'case-insensitive focus-bow', \
-                                     'case-sensitive bidirectional-context-with-focus', \
-                                     'case-sensitive bidirectional-context-without-focus', \
-                                     'case-sensitive focus-bow', \
-                                     'left-char & right-char', 'left-initial & right-initial', \
-                                     'gazetteer', 'char-conv', 'char-bigram' ] ):
+        for ith, name in enumerate( [
+            'case-insensitive bidirectional-context-with-focus', \
+            'case-insensitive bidirectional-context-without-focus', \
+            'case-insensitive focus-bow', \
+            'case-sensitive bidirectional-context-with-focus', \
+            'case-sensitive bidirectional-context-without-focus', \
+            'case-sensitive focus-bow', \
+            'left-char & right-char', 'left-initial & right-initial', \
+            'gazetteer', 'char-conv', 'char-bigram' 
+        ] ):
             if (1 << ith) & self.config.feature_choice > 0: 
                 logger.info( '%s used' % name )
                 if ith in [0, 1]:
@@ -285,55 +289,125 @@ class fofe_mention_net( object ):
             #################### placeholder ###############################################
             ################################################################################
 
-            self.lw1_values = tf.placeholder( tf.float32, [None], 
-                                              name = 'left-context-values' )
-            self.lw1_indices = tf.placeholder( tf.int64, [None, 2], 
-                                               name = 'left-context-indices' )
+            self.lw1_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'left-context-values' 
+            )
 
-            self.rw1_values = tf.placeholder( tf.float32, [None], 
-                                              name = 'right-context-values' )
-            self.rw1_indices = tf.placeholder( tf.int64, [None, 2], 
-                                               name = 'right-context-indices' )
+            self.lw1_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'left-context-indices' 
+            )
 
-            self.lw2_values = tf.placeholder( tf.float32, [None], 
-                                              name = 'left-context-values' )
-            self.lw2_indices = tf.placeholder( tf.int64, [None, 2], 
-                                               name = 'left-context-indices' )
+            self.rw1_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'right-context-values' 
+            )
 
-            self.rw2_values = tf.placeholder( tf.float32, [None], 
-                                              name = 'right-context-values' )
-            self.rw2_indices = tf.placeholder( tf.int64, [None, 2], 
-                                               name = 'right-context-indices' )
+            self.rw1_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'right-context-indices' 
+            )
 
-            self.bow1_values = tf.placeholder( tf.float32, [None], 
-                                               name = 'bow-values' )
-            self.bow1_indices = tf.placeholder( tf.int64, [None, 2], 
-                                                name = 'bow-indices' )
+            self.lw2_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'left-context-values' 
+            )
 
-            self.lw3_values = tf.placeholder( tf.float32, [None], 
-                                              name = 'left-context-values' )
-            self.lw3_indices = tf.placeholder( tf.int64, [None, 2], 
-                                               name = 'left-context-indices' )
+            self.lw2_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'left-context-indices' 
+            )
 
-            self.rw3_values = tf.placeholder( tf.float32, [None], 
-                                              name = 'right-context-values' )
-            self.rw3_indices = tf.placeholder( tf.int64, [None, 2], 
-                                               name = 'right-context-indices' )
+            self.rw2_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'right-context-values' 
+            )
 
-            self.lw4_values = tf.placeholder( tf.float32, [None], 
-                                              name = 'left-context-values' )
-            self.lw4_indices = tf.placeholder( tf.int64, [None, 2], 
-                                               name = 'left-context-indices' )
+            self.rw2_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'right-context-indices' 
+            )
 
-            self.rw4_values = tf.placeholder( tf.float32, [None], 
-                                              name = 'right-context-values' )
-            self.rw4_indices = tf.placeholder( tf.int64, [None, 2], 
-                                               name = 'right-context-indices' )
+            self.bow1_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'bow-values' 
+            )
 
-            self.bow2_values = tf.placeholder( tf.float32, [None], 
-                                               name = 'bow-values' )
-            self.bow2_indices = tf.placeholder( tf.int64, [None, 2], 
-                                                name = 'bow-indices' )
+            self.bow1_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'bow-indices' 
+            )
+
+            self.lw3_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'left-context-values' 
+            )
+
+            self.lw3_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'left-context-indices' 
+            )
+
+            self.rw3_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'right-context-values' 
+            )
+
+            self.rw3_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'right-context-indices' 
+            )
+
+            self.lw4_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'left-context-values' 
+            )
+
+            self.lw4_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'left-context-indices' 
+            )
+
+            self.rw4_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'right-context-values' 
+            )
+
+            self.rw4_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'right-context-indices' 
+            )
+
+            self.bow2_values = tf.placeholder( 
+                tf.float32, 
+                [None], 
+                name = 'bow-values' 
+            )
+
+            self.bow2_indices = tf.placeholder( 
+                tf.int64, 
+                [None, 2], 
+                name = 'bow-indices' 
+            )
 
             self.shape1 = tf.placeholder( tf.int64, [2], name = 'bow-shape1' )
             self.shape2 = tf.placeholder( tf.int64, [2], name = 'bow-shape2' )
@@ -379,38 +453,60 @@ class fofe_mention_net( object ):
             if initialize_method == 'uniform':
                 val_rng = numpy.float32(2.5 / numpy.sqrt(n_char + n_char_embedding))
                 self.char_embedding = tf.Variable( tf.random_uniform( 
-                                        [n_char, n_char_embedding], minval = -val_rng, maxval = val_rng ) )
+                    [n_char, n_char_embedding], 
+                    minval = -val_rng, 
+                    maxval = val_rng 
+                ) )
             
                 self.conv_embedding = tf.Variable( tf.random_uniform( 
-                                        [n_char, n_char_embedding], minval = -val_rng, maxval = val_rng ) )
+                    [n_char, n_char_embedding], 
+                    minval = -val_rng, 
+                    maxval = val_rng 
+                ) )
 
                 val_rng = numpy.float32(2.5 / numpy.sqrt(n_label_type + n_ner_embedding + 1))
                 self.ner_embedding = tf.Variable( tf.random_uniform( 
-                                        [n_label_type + 1 ,n_ner_embedding], minval = -val_rng, maxval = val_rng ) )
+                    [n_label_type + 1 ,n_ner_embedding], 
+                    minval = -val_rng, 
+                    maxval = val_rng 
+                ) )
                 
                 val_rng = numpy.float32(2.5 / numpy.sqrt(96 * 96 + n_char_embedding))
                 self.bigram_embedding = tf.Variable( tf.random_uniform( 
-                                        [96 * 96, n_char_embedding], minval = -val_rng, maxval = val_rng ) )
+                    [96 * 96, n_char_embedding], 
+                    minval = -val_rng, 
+                    maxval = val_rng 
+                ) )
                 
-                self.kernels = [ tf.Variable( tf.random_uniform( 
-                                    [h, n_char_embedding, 1, d], 
-                                    minval = -2.5 / numpy.sqrt(1 + h * n_char_embedding * d), 
-                                    maxval = 2.5 / numpy.sqrt(1 + h * n_char_embedding * d) ) ) for \
-                                (h, d) in zip( kernel_height, kernel_depth ) ]
+                self.kernels = [ 
+                    tf.Variable( tf.random_uniform( 
+                        [h, n_char_embedding, 1, d], 
+                        minval = -2.5 / numpy.sqrt(1 + h * n_char_embedding * d), 
+                        maxval = 2.5 / numpy.sqrt(1 + h * n_char_embedding * d) 
+                    ) ) for (h, d) in zip( kernel_height, kernel_depth ) 
+                ]
 
                 self.kernel_bias = [ tf.Variable( tf.zeros( [d] ) ) for d in kernel_depth ]
 
                 if hope_out > 0:
                     val_rng = 2.5 / numpy.sqrt( hope_in + hope_out )
-                    u_matrix = numpy.random.uniform( -val_rng, val_rng, 
-                                                    [hope_in, hope_out] ).astype( numpy.float32 )
+                    u_matrix = numpy.random.uniform( 
+                        -val_rng, 
+                        val_rng, 
+                        [hope_in, hope_out] 
+                    ).astype( numpy.float32 )
                     u_matrix = u_matrix / (u_matrix ** 2).sum( 0 )
                     self.U = tf.Variable( u_matrix )
                     del u_matrix
 
                 for i, o in zip( n_in, n_out ):
                     val_rng = numpy.float32(2.5 / numpy.sqrt(i + o))
-                    self.W.append( tf.Variable( tf.random_uniform( [i, o], minval = -val_rng, maxval = val_rng ) ) )
+                    self.W.append( tf.Variable( 
+                        tf.random_uniform( 
+                            [i, o], 
+                            minval = -val_rng, 
+                            maxval = val_rng ) 
+                    ) )
                     self.b.append( tf.Variable( tf.zeros( [o] ) )  )
 
                 if n_pattern > 0:
@@ -455,31 +551,54 @@ class fofe_mention_net( object ):
                 del val_rng
                 
             else:
-                self.char_embedding = tf.Variable( tf.truncated_normal( [n_char, n_char_embedding], 
-                                                stddev = numpy.sqrt(2./(n_char * n_char_embedding)) ) )
+                self.char_embedding = tf.Variable( 
+                    tf.truncated_normal( 
+                        [n_char, n_char_embedding], 
+                        stddev = numpy.sqrt(2./(n_char * n_char_embedding)) 
+                    ) 
+                )
                 
-                self.conv_embedding = tf.Variable( tf.truncated_normal( [n_char, n_char_embedding], 
-                                                stddev = numpy.sqrt(2./(n_char * n_char_embedding)) ) )
+                self.conv_embedding = tf.Variable( 
+                    tf.truncated_normal( 
+                        [n_char, n_char_embedding], 
+                        stddev = numpy.sqrt(2./(n_char * n_char_embedding)) 
+                    ) 
+                )
 
-                self.ner_embedding = tf.Variable( tf.truncated_normal( [n_label_type + 1, n_ner_embedding], 
-                                                stddev = numpy.sqrt(2./(n_label_type * n_ner_embedding)) ) )
+                self.ner_embedding = tf.Variable( 
+                    tf.truncated_normal( 
+                        [n_label_type + 1, n_ner_embedding], 
+                        stddev = numpy.sqrt(2./(n_label_type * n_ner_embedding)) 
+                    ) 
+                )
 
-                self.bigram_embedding = tf.Variable( tf.truncated_normal( [96 * 96, n_char_embedding],
-                                                stddev = numpy.sqrt(2./(96 * 96 * n_char_embedding)) ) )
+                self.bigram_embedding = tf.Variable( 
+                    tf.truncated_normal( 
+                        [96 * 96, n_char_embedding],
+                        stddev = numpy.sqrt(2./(96 * 96 * n_char_embedding)) 
+                    ) 
+                )
 
-                self.kernels = [ tf.Variable( tf.truncated_normal( [h, n_char_embedding, 1, d], 
-                                                              stddev = numpy.sqrt(2./(h * n_char_embedding * d)) ) ) for \
-                            (h, d) in zip( kernel_height, kernel_depth ) ]
+                self.kernels = [ tf.Variable( 
+                    tf.truncated_normal( 
+                        [h, n_char_embedding, 1, d], 
+                        stddev = numpy.sqrt(2./(h * n_char_embedding * d)) 
+                    ) ) for (h, d) in zip( kernel_height, kernel_depth ) 
+                ]
 
                 self.kernel_bias = [ tf.Variable( tf.zeros( [d] ) ) for d in kernel_depth ]
 
                 # the U matrix in the HOPE paper
                 if hope_out > 0:
-                    self.U = tf.Variable( tf.truncated_normal( [hope_in, hope_out],
-                                                          stddev = numpy.sqrt(2./(hope_in * hope_out)) ) )
+                    self.U = tf.Variable( tf.truncated_normal( 
+                        [hope_in, hope_out],
+                        stddev = numpy.sqrt(2./(hope_in * hope_out)) 
+                    ) )
 
                 for i, o in zip( n_in, n_out ):
-                    self.W.append( tf.Variable( tf.truncated_normal( [i, o], stddev = numpy.sqrt(2./(i * o)) ) ) )
+                    self.W.append( tf.Variable( 
+                        tf.truncated_normal( [i, o], stddev = numpy.sqrt(2./(i * o)) ) 
+                    ) )
                     self.b.append( tf.Variable( tf.zeros( [o] ) ) )
 
                 if n_pattern > 0:
@@ -540,12 +659,17 @@ class fofe_mention_net( object ):
             ################################################################################
 
             char_cube = tf.expand_dims( tf.gather( self.conv_embedding, self.char_idx ), 3 )
-            char_conv = [ tf.reduce_max( tf.nn.tanh( tf.nn.conv2d( char_cube, 
-                                                                   kk, 
-                                                                   [1, 1, 1, 1], 
-                                                                   'VALID' ) + bb ),
-                                                     reduction_indices = [1, 2] ) \
-                            for kk,bb in zip( self.kernels, self.kernel_bias) ]
+            char_conv = [ tf.reduce_max( 
+                tf.nn.tanh( 
+                    tf.nn.conv2d( 
+                        char_cube, 
+                         kk, 
+                         [1, 1, 1, 1], 
+                        'VALID' 
+                    ) + bb 
+                ),
+                axis = [1, 2] 
+            ) for kk,bb in zip( self.kernels, self.kernel_bias) ]
 
 
             lw1 = tf.SparseTensor( self.lw1_indices, self.lw1_values, self.shape1 )
@@ -620,25 +744,57 @@ class fofe_mention_net( object ):
             # all sparse feature after projection
 
             # case-insensitive in English / word embedding in Chinese
-            lwp1 = tf.sparse_tensor_dense_matmul( lw1, self.word_embedding_1,
-                                                  name = 'emb1-left-fofe-excl-proj' )
-            rwp1 = tf.sparse_tensor_dense_matmul( rw1, self.word_embedding_1,
-                                                  name = 'emb1-right-fofe-excl-proj' )
-            lwp2 = tf.sparse_tensor_dense_matmul( lw2, self.word_embedding_1,
-                                                  name = 'emb1-left-fofe-incl-proj' )
-            rwp2 = tf.sparse_tensor_dense_matmul( rw2, self.word_embedding_1,
-                                                  name = 'emb1-right-fofe-incl-proj' )
+            lwp1 = tf.sparse_tensor_dense_matmul( 
+                lw1, 
+                self.word_embedding_1,
+                name = 'emb1-left-fofe-excl-proj' 
+            )
+
+            rwp1 = tf.sparse_tensor_dense_matmul( 
+                rw1, 
+                self.word_embedding_1,
+                name = 'emb1-right-fofe-excl-proj' 
+            )
+
+            lwp2 = tf.sparse_tensor_dense_matmul( 
+                lw2, 
+                self.word_embedding_1,
+                name = 'emb1-left-fofe-incl-proj' 
+            )
+
+            rwp2 = tf.sparse_tensor_dense_matmul( 
+                rw2, 
+                self.word_embedding_1,
+                name = 'emb1-right-fofe-incl-proj' 
+            )
+
             bowp1 = tf.sparse_tensor_dense_matmul( bow1, self.word_embedding_1 )
 
             # case-sensitive in English / character embedding in Chinese
-            lwp3 = tf.sparse_tensor_dense_matmul( lw3, self.word_embedding_2,
-                                                  name = 'emb2-left-fofe-excl-proj' )
-            rwp3 = tf.sparse_tensor_dense_matmul( rw3, self.word_embedding_2,
-                                                  name = 'emb2-right-fofe-excl-proj' )
-            lwp4 = tf.sparse_tensor_dense_matmul( lw4, self.word_embedding_2,
-                                                  name = 'emb2-left-fofe-incl-proj' )
-            rwp4 = tf.sparse_tensor_dense_matmul( rw4, self.word_embedding_2,
-                                                  name = 'emb2-right-fofe-incl-proj' )
+            lwp3 = tf.sparse_tensor_dense_matmul( 
+                lw3, 
+                self.word_embedding_2,
+                name = 'emb2-left-fofe-excl-proj' 
+            )
+
+            rwp3 = tf.sparse_tensor_dense_matmul( 
+                rw3, 
+                self.word_embedding_2,
+                name = 'emb2-right-fofe-excl-proj' 
+            )
+
+            lwp4 = tf.sparse_tensor_dense_matmul( 
+                lw4, 
+                self.word_embedding_2,
+                name = 'emb2-left-fofe-incl-proj' 
+            )
+
+            rwp4 = tf.sparse_tensor_dense_matmul( 
+                rw4, 
+                self.word_embedding_2,
+                name = 'emb2-right-fofe-incl-proj' 
+            )
+
             bowp2 = tf.sparse_tensor_dense_matmul( bow2, self.word_embedding_2 )
 
             # dense features after projection
@@ -684,8 +840,12 @@ class fofe_mention_net( object ):
                     layer_output[-1] = tf.nn.relu( layer_output[-1] )
                     layer_output[-1] = tf.nn.dropout( layer_output[-1], self.keep_prob )
 
-            self.xent = tf.reduce_mean( tf.nn.sparse_softmax_cross_entropy_with_logits( 
-                                            logits = layer_output[-1], labels = self.label ) )
+            self.xent = tf.reduce_mean( 
+                tf.nn.sparse_softmax_cross_entropy_with_logits( 
+                    logits = layer_output[-1], 
+                    labels = self.label 
+                ) 
+            )
 
             if config.l1 > 0:
                 for param in self.param:
@@ -700,10 +860,11 @@ class fofe_mention_net( object ):
             self.predicted_indices = tf.reshape( top_indices, [-1] )
 
             # fully connected layers are must-trained layers
-            fully_connected_train_step = tf.train.MomentumOptimizer( self.lr, 
-                                                                     self.config.momentum, 
-                                                                     use_locking = False ) \
-                                           .minimize( self.xent, var_list = self.W + self.b )
+            fully_connected_train_step = tf.train.MomentumOptimizer( 
+                self.lr, 
+                self.config.momentum, 
+                use_locking = False 
+            ) .minimize( self.xent, var_list = self.W + self.b )
             self.train_step = [ fully_connected_train_step ]
 
             if n_pattern > 0:
@@ -725,65 +886,77 @@ class fofe_mention_net( object ):
                                                 )
                                             ) * __lambda
                 sparse_fofe_step = tf.train.GradientDescentOptimizer(
-                                        self.lr,
-                                        use_locking = True
-                                    ).minimize( 
-                                        self.xentPlusSparse,
-                                        var_list = self.pattern1 + self.pattern2 +
-                                                   self.pattern1_bias +
-                                                   self.pattern2_bias
-                                    )
+                    self.lr,
+                    use_locking = True
+                ).minimize( 
+                    self.xentPlusSparse,
+                    var_list = self.pattern1 + self.pattern2 + self.pattern1_bias + self.pattern2_bias
+                )
                 self.train_step.append( sparse_fofe_step )
 
 
             if feature_choice & 0b111 > 0:
-                insensitive_train_step = tf.train.GradientDescentOptimizer( self.lr / 4, 
-                                                                            use_locking = True ) \
-                                          .minimize( self.xent, var_list = [ self.word_embedding_1 ] )
+                insensitive_train_step = tf.train.GradientDescentOptimizer( 
+                    self.lr / 4, 
+                    use_locking = True 
+                ).minimize( self.xent, var_list = [ self.word_embedding_1 ] )
                 self.train_step.append( insensitive_train_step )
 
             if feature_choice & (0b111 << 3) > 0:
-                sensitive_train_step = tf.train.GradientDescentOptimizer( self.lr / 4, 
-                                                                          use_locking = True ) \
-                                          .minimize( self.xent, var_list = [ self.word_embedding_2 ] )
+                sensitive_train_step = tf.train.GradientDescentOptimizer( 
+                    self.lr / 4, 
+                    use_locking = True 
+                ).minimize( self.xent, var_list = [ self.word_embedding_2 ] )
                 self.train_step.append( sensitive_train_step )
 
 
             if feature_choice & (0b11 << 6) > 0:
-                char_embedding_train_step = tf.train.GradientDescentOptimizer( self.lr / 2, 
-                                                                               use_locking = True ) \
-                                              .minimize( self.xent, var_list = [ self.char_embedding ] )
+                char_embedding_train_step = tf.train.GradientDescentOptimizer( 
+                    self.lr / 2, 
+                    use_locking = True 
+                ).minimize( self.xent, var_list = [ self.char_embedding ] )
                 self.train_step.append( char_embedding_train_step )
 
             if feature_choice & (1 << 8) > 0:
-                ner_embedding_train_step = tf.train.GradientDescentOptimizer( self.lr, 
-                                                                              use_locking = True ) \
-                                          .minimize( self.xent, var_list = [ self.ner_embedding ] )
+                ner_embedding_train_step = tf.train.GradientDescentOptimizer( 
+                    self.lr, 
+                    use_locking = True 
+                ).minimize( self.xent, var_list = [ self.ner_embedding ] )
                 self.train_step.append( ner_embedding_train_step )
 
             if feature_choice & (1 << 9) > 0:
-                char_conv_train_step = tf.train.MomentumOptimizer( self.lr, momentum )\
-                                             .minimize( self.xent, 
-                                                var_list = [ self.conv_embedding ] + \
-                                                             self.kernels + self.kernel_bias )
+                char_conv_train_step = tf.train.MomentumOptimizer( 
+                    self.lr, 
+                    momentum 
+                ).minimize( 
+                    self.xent, 
+                    var_list = [ self.conv_embedding ] + self.kernels + self.kernel_bias 
+                )
                 self.train_step.append( char_conv_train_step )
 
             if feature_choice & (1 << 10) > 0:
-                bigram_train_step = tf.train.GradientDescentOptimizer( self.lr / 2, use_locking = True )\
-                                            .minimize( self.xent, var_list = [ self.bigram_embedding ] )
+                bigram_train_step = tf.train.GradientDescentOptimizer( 
+                    self.lr / 2, 
+                    use_locking = True 
+                ).minimize( self.xent, var_list = [ self.bigram_embedding ] )
                 self.train_step.append( bigram_train_step )
 
             if hope_out > 0:
                 __lambda = 0.001
                 orthogonal_penalty = tf.reduce_sum(
-                                            tf.abs(
-                                                tf.matmul( self.U, self.U, transpose_a = True ) - tf.eye(hope_out)
-                                            ) 
-                                        ) * __lambda
-                U_train_step_1 = tf.train.GradientDescentOptimizer( self.lr, use_locking = True ) \
-                                         .minimize( orthogonal_penalty , var_list = [ self.U ] )
-                U_train_step_2 = tf.train.MomentumOptimizer( self.lr, momentum, use_locking = True ) \
-                                         .minimize( self.xent, var_list = [ self.U ] )
+                    tf.abs(
+                        tf.matmul( self.U, self.U, transpose_a = True ) - tf.eye(hope_out)
+                    ) 
+                ) * __lambda
+                U_train_step_1 = tf.train.GradientDescentOptimizer( 
+                    self.lr, 
+                    use_locking = True 
+                ) .minimize( orthogonal_penalty , var_list = [ self.U ] )
+                U_train_step_2 = tf.train.MomentumOptimizer( 
+                    self.lr, 
+                    momentum, 
+                    use_locking = True 
+                ).minimize( self.xent, var_list = [ self.U ] )
                 self.train_step.append( U_train_step_1 )
                 self.train_step.append( U_train_step_2 )
 
@@ -828,42 +1001,44 @@ class fofe_mention_net( object ):
 
         c = self.session.run(  
             self.train_step + [ self.xent ],
-            feed_dict = {   self.lw1_values: l1_values,
-                            self.lw1_indices: l1_indices,
-                            self.rw1_values: r1_values,
-                            self.rw1_indices: r1_indices,
-                            self.lw2_values: l2_values,
-                            self.lw2_indices: l2_indices,
-                            self.rw2_values: r2_values,
-                            self.rw2_indices: r2_indices,
-                            self.bow1_indices: bow1i,
-                            self.bow1_values: numpy.ones( bow1i.shape[0], dtype = numpy.float32 ),
-                            self.lw3_values: l3_values,
-                            self.lw3_indices: l3_indices,
-                            self.rw3_values: r3_values,
-                            self.rw3_indices: r3_indices,
-                            self.lw4_values: l4_values,
-                            self.lw4_indices: l4_indices,
-                            self.rw4_values: r4_values,
-                            self.rw4_indices: r4_indices,
-                            self.bow2_indices: bow2i,
-                            self.bow2_values: numpy.ones( bow2i.shape[0], dtype = numpy.float32 ),
-                            self.shape1: (target.shape[0], self.n_word1),
-                            self.shape2: (target.shape[0], self.n_word2),
-                            self.lc_fofe: dense_feature[:,:128],
-                            self.rc_fofe: dense_feature[:,128:256],
-                            self.li_fofe: dense_feature[:,256:384],
-                            self.ri_fofe: dense_feature[:,384:512],
-                            self.ner_cls_match: dense_feature[:,512:],
-                            self.char_idx: conv_idx,
-                            self.lbc_values : l5_values,
-                            self.lbc_indices : l5_indices,
-                            self.rbc_values : r5_values,
-                            self.rbc_indices : r5_indices,
-                            self.shape3 : (target.shape[0], 96 * 96),
-                            self.label: target,
-                            self.lr: self.config.learning_rate,
-                            self.keep_prob: 1 - self.config.drop_rate },
+            feed_dict = {   
+                self.lw1_values: l1_values,
+                self.lw1_indices: l1_indices,
+                self.rw1_values: r1_values,
+                self.rw1_indices: r1_indices,
+                self.lw2_values: l2_values,
+                self.lw2_indices: l2_indices,
+                self.rw2_values: r2_values,
+                self.rw2_indices: r2_indices,
+                self.bow1_indices: bow1i,
+                self.bow1_values: numpy.ones( bow1i.shape[0], dtype = numpy.float32 ),
+                self.lw3_values: l3_values,
+                self.lw3_indices: l3_indices,
+                self.rw3_values: r3_values,
+                self.rw3_indices: r3_indices,
+                self.lw4_values: l4_values,
+                self.lw4_indices: l4_indices,
+                self.rw4_values: r4_values,
+                self.rw4_indices: r4_indices,
+                self.bow2_indices: bow2i,
+                self.bow2_values: numpy.ones( bow2i.shape[0], dtype = numpy.float32 ),
+                self.shape1: (target.shape[0], self.n_word1),
+                self.shape2: (target.shape[0], self.n_word2),
+                self.lc_fofe: dense_feature[:,:128],
+                self.rc_fofe: dense_feature[:,128:256],
+                self.li_fofe: dense_feature[:,256:384],
+                self.ri_fofe: dense_feature[:,384:512],
+                self.ner_cls_match: dense_feature[:,512:],
+                self.char_idx: conv_idx,
+                self.lbc_values : l5_values,
+                self.lbc_indices : l5_indices,
+                self.rbc_values : r5_values,
+                self.rbc_indices : r5_indices,
+                self.shape3 : (target.shape[0], 96 * 96),
+                self.label: target,
+                self.lr: self.config.learning_rate,
+                self.keep_prob: 1 - self.config.drop_rate 
+            },
             options = options, 
             run_metadata = run_metadata
         )[-1]
@@ -904,44 +1079,46 @@ class fofe_mention_net( object ):
         if not self.config.strictly_one_hot:
             dense_feature[:,-1] = 0
 
-        c, pi, pv = self.session.run( [ self.xent, 
-                                        self.predicted_indices, 
-                                        self.predicted_values ], 
-                                        feed_dict = {   self.lw1_values: l1_values,
-                                                        self.lw1_indices: l1_indices,
-                                                        self.rw1_values: r1_values,
-                                                        self.rw1_indices: r1_indices,
-                                                        self.lw2_values: l2_values,
-                                                        self.lw2_indices: l2_indices,
-                                                        self.rw2_values: r2_values,
-                                                        self.rw2_indices: r2_indices,
-                                                        self.bow1_indices: bow1i,
-                                                        self.bow1_values: numpy.ones( bow1i.shape[0], dtype = numpy.float32 ),
-                                                        self.lw3_values: l3_values,
-                                                        self.lw3_indices: l3_indices,
-                                                        self.rw3_values: r3_values,
-                                                        self.rw3_indices: r3_indices,
-                                                        self.lw4_values: l4_values,
-                                                        self.lw4_indices: l4_indices,
-                                                        self.rw4_values: r4_values,
-                                                        self.rw4_indices: r4_indices,
-                                                        self.bow2_indices: bow2i,
-                                                        self.bow2_values: numpy.ones( bow2i.shape[0], dtype = numpy.float32 ),
-                                                        self.shape1: (target.shape[0], self.n_word1),
-                                                        self.shape2: (target.shape[0], self.n_word2),
-                                                        self.lc_fofe: dense_feature[:,:128],
-                                                        self.rc_fofe: dense_feature[:,128:256],
-                                                        self.li_fofe: dense_feature[:,256:384],
-                                                        self.ri_fofe: dense_feature[:,384:512],
-                                                        self.ner_cls_match: dense_feature[:,512:],
-                                                        self.char_idx: conv_idx,
-                                                        self.lbc_values : l5_values,
-                                                        self.lbc_indices : l5_indices,
-                                                        self.rbc_values : r5_values,
-                                                        self.rbc_indices : r5_indices,
-                                                        self.shape3 : (target.shape[0], 96 * 96),
-                                                        self.label: target,
-                                                        self.keep_prob: 1 } ) 
+        c, pi, pv = self.session.run( 
+            [ self.xent, self.predicted_indices, self.predicted_values ], 
+            feed_dict = {   
+                self.lw1_values: l1_values,
+                self.lw1_indices: l1_indices,
+                self.rw1_values: r1_values,
+                self.rw1_indices: r1_indices,
+                self.lw2_values: l2_values,
+                self.lw2_indices: l2_indices,
+                self.rw2_values: r2_values,
+                self.rw2_indices: r2_indices,
+                self.bow1_indices: bow1i,
+                self.bow1_values: numpy.ones( bow1i.shape[0], dtype = numpy.float32 ),
+                self.lw3_values: l3_values,
+                self.lw3_indices: l3_indices,
+                self.rw3_values: r3_values,
+                self.rw3_indices: r3_indices,
+                self.lw4_values: l4_values,
+                self.lw4_indices: l4_indices,
+                self.rw4_values: r4_values,
+                self.rw4_indices: r4_indices,
+                self.bow2_indices: bow2i,
+                self.bow2_values: numpy.ones( bow2i.shape[0], dtype = numpy.float32 ),
+                self.shape1: (target.shape[0], self.n_word1),
+                self.shape2: (target.shape[0], self.n_word2),
+                self.lc_fofe: dense_feature[:,:128],
+                self.rc_fofe: dense_feature[:,128:256],
+                self.li_fofe: dense_feature[:,256:384],
+                self.ri_fofe: dense_feature[:,384:512],
+                self.ner_cls_match: dense_feature[:,512:],
+                self.char_idx: conv_idx,
+                self.lbc_values : l5_values,
+                self.lbc_indices : l5_indices,
+                self.rbc_values : r5_values,
+                self.rbc_indices : r5_indices,
+                self.shape3 : (target.shape[0], 96 * 96),
+                self.label: target,
+                self.keep_prob: 1 
+            } 
+        ) 
 
         return c, pi, pv
 
@@ -1000,13 +1177,6 @@ class fofe_mention_net_v2( object ):
 
 
         projection1, projection2 = self.__LoadEmbed()
-
-        if self.config.is_2nd_pass:
-            self.pad1 = self.n_word1 - self.config.n_label_type - 2 # case-insensitive
-            self.pad2 = self.n_word2 - self.config.n_label_type - 3 # case-sensitive
-        else:
-            self.pad1 = self.n_word1 - 2
-            self.pad2 = self.n_word2 - 3
 
         n_in, n_out = self.__DetermineLayerSize()
         logger.info( 'n_in: ' + str(n_in) )
@@ -1112,6 +1282,16 @@ class fofe_mention_net_v2( object ):
             else:
                 projection2[-2 - n_label_type: -2, :] = sub
 
+        if self.config.is_2nd_pass:
+            self.pad1 = self.n_word1 - self.config.n_label_type - 2 # case-insensitive
+            self.pad2 = self.n_word2 - self.config.n_label_type - 3 # case-sensitive
+        else:
+            self.pad1 = self.n_word1 - 2
+            self.pad2 = self.n_word2 - 3
+
+        projection1[self.pad1] = 0
+        projection2[self.pad2] = 0
+
         return projection1, projection2
 
 
@@ -1138,8 +1318,8 @@ class fofe_mention_net_v2( object ):
                     in1 += self.config.n_word_embedding1
                 elif ith == 5:
                     in1 += self.config.n_word_embedding1
-                # elif ith in [6, 7]:
-                elif ith == 6:
+                elif ith in [6, 7]:
+                # elif ith == 6:
                     in1 += self.config.n_char_embedding * 2
                 elif ith == 8: 
                     in1 += self.config.n_ner_embedding
@@ -1162,12 +1342,14 @@ class fofe_mention_net_v2( object ):
             ['left', 'right']
         )] + [
             'case-insensitive/bow', 'case-sensitive/bow', 
-            'right-padded-char', 'right-padded-char'
+            'right-padded-char', 'right-padded-char', 
+            'left-initial', 'right-initial'
         ]
 
         self.lw1, self.rw1, self.lw2, self.rw2, \
         self.lw3, self.rw3, self.lw4, self.rw4, \
-        self.bow1, self.bow2, self.lc, self.rc = [
+        self.bow1, self.bow2, \
+        self.lc, self.rc, self.linit, self.rinit = [
             tf.placeholder(
                 tf.int32,
                 [None, None],
@@ -1209,12 +1391,15 @@ class fofe_mention_net_v2( object ):
             6. / (self.config.n_char + self.config.n_char_embedding )
         ) )
         self.char_embed, self.conv_embed = [
-            tf.Variable( tf.random_uniform(
-                [self.config.n_char, self.config.n_char_embedding],
-                minval = -rng,
-                maxval = rng
-            ) ) for _ in xrange(2)
+            numpy.random.uniform(
+                -rng, rng,
+                (self.config.n_char, self.config.n_char_embedding)
+            ).astype( numpy.float32 ) for _ in xrange(2)
         ]
+        self.char_embed[127] = 0
+        self.conv_embed[127] = 0
+        self.char_embed = tf.Variable( self.char_embed )
+        self.conv_embed = tf.Variable( self.conv_embed )
 
         rng = numpy.float32( numpy.sqrt(
             6. / (self.config.n_label_type + self.config.n_ner_embedding )
@@ -1291,6 +1476,8 @@ class fofe_mention_net_v2( object ):
 
         lcp = fofe( self.lc, self.char_alpha, self.char_embed )
         rcp = fofe( self.rc, self.char_alpha, self.char_embed )
+        linitp = fofe( self.linit, self.char_alpha, self.char_embed )
+        rinitp = fofe( self.rinit, self.char_alpha, self.char_embed )
         gazp = tf.matmul( self.gaz, self.ner_embed )
 
         char_cube = tf.expand_dims( 
@@ -1314,7 +1501,7 @@ class fofe_mention_net_v2( object ):
         feature_list = [ 
             [lw1p, rw1p], [lw2p, rw2p], [bow1p],
             [lw3p, rw3p], [lw4p, rw4p], [bow2p],
-            [lcp, rcp], [], [gazp], char_conv, [] 
+            [lcp, rcp], [linitp, rinitp], [gazp], char_conv, [] 
         ]
         used, not_used = [], []
         for ith, f in enumerate( feature_list ):
@@ -1339,8 +1526,13 @@ class fofe_mention_net_v2( object ):
                 logits = layer_output[-1], 
                 labels = self.target
             ) 
-        ) + self.config.l2 * tf.nn.l2_loss(self.word_embed1[self.pad1]) \
-          + self.config.l2 * tf.nn.l2_loss(self.word_embed2[self.pad2])
+        ) 
+
+        self.obj = self.xent \
+                    + 0.01 * tf.nn.l2_loss(self.word_embed1[self.pad1]) \
+                    + 0.01 * tf.nn.l2_loss(self.word_embed2[self.pad2]) \
+                    + 0.01 * tf.nn.l2_loss(self.char_embed[127]) \
+                    + 0.01 * tf.nn.l2_loss(self.conv_embed[127])
 
         self.predicted_values = tf.nn.softmax( layer_output[-1] )
         self.predicted_indices = tf.argmax( layer_output[-1], axis = 1 )
@@ -1351,52 +1543,73 @@ class fofe_mention_net_v2( object ):
         momentum = self.config.momentum
 
         momentum_step, adam_step = [], []
+        epsilon = 0.1
 
         if feature_choice & 0b111 > 0:
             step = tf.train.GradientDescentOptimizer( 
                 learning_rate = self.lr / 4, 
                 use_locking = True 
-            ).minimize( self.xent, var_list = [ self.word_embed1 ] )
+            ).minimize( self.obj, var_list = [ self.word_embed1 ] )
             momentum_step.append( step )
+
+            step = tf.train.AdamOptimizer(
+                learning_rate = self.lr / 4,
+                epsilon = epsilon
+            ).minimize( self.obj, var_list = [ self.word_embed1 ] )
             adam_step.append( step )
 
         if feature_choice & (0b111 << 3) > 0:
             step = tf.train.GradientDescentOptimizer( 
                 learning_rate = self.lr / 4, 
                 use_locking = True 
-            ).minimize( self.xent, var_list = [ self.word_embed2 ] )
+            ).minimize( self.obj, var_list = [ self.word_embed2 ] )
             momentum_step.append( step )
+
+            step = tf.train.AdamOptimizer(
+                learning_rate = self.lr / 4,
+                epsilon = epsilon
+            ).minimize( self.obj, var_list = [ self.word_embed2 ] )
             adam_step.append( step )
 
         if feature_choice & (1 << 6) > 0:
             step = tf.train.GradientDescentOptimizer( 
                 learning_rate = self.lr / 2, 
                 use_locking = True 
-            ).minimize( self.xent, var_list = [ self.char_embed ] )
+            ).minimize( self.obj, var_list = [ self.char_embed ] )
             momentum_step.append( step )
+
+            step = tf.train.AdamOptimizer(
+                learning_rate = self.lr / 2,
+                epsilon = epsilon
+            ).minimize( self.obj, var_list = [ self.char_embed ] )
             adam_step.append( step )
 
         if feature_choice & (1 << 8) > 0:
             step = tf.train.GradientDescentOptimizer( 
                 learning_rate = self.lr, 
                 use_locking = True 
-            ).minimize( self.xent, var_list = [ self.ner_embed ] )
+            ).minimize( self.obj, var_list = [ self.ner_embed ] )
             momentum_step.append( self.ner_embed )
+
+            step = tf.train.AdamOptimizer(
+                learning_rate = self.lr,
+                epsilon = epsilon
+            ).minimize( self.obj, var_list = [ self.ner_embed ] )
             adam_step.append( step )
 
         if feature_choice & (1 << 9) > 0:
             step = tf.train.MomentumOptimizer( 
                 self.lr, momentum 
             ).minimize( 
-                self.xent, 
+                self.obj, 
                 var_list = [ self.conv_embed ] + self.kernels + self.bias_k )
             momentum_step.append( step )
 
             step = tf.train.AdamOptimizer(
                 learning_rate = self.lr,
-                epsilon = 0.01
+                epsilon = epsilon
             ).minimize( 
-                self.xent, 
+                self.obj, 
                 var_list = [ self.conv_embed ] + self.kernels + self.bias_k 
             )
             adam_step.append( step )
@@ -1404,16 +1617,16 @@ class fofe_mention_net_v2( object ):
         step = tf.train.MomentumOptimizer( 
             self.lr, momentum 
         ).minimize( 
-            self.xent, 
+            self.obj, 
             var_list = self.W + self.bias_w 
         )
         momentum_step.append( step )
 
         step = tf.train.AdamOptimizer(
             learning_rate = self.lr,
-            epsilon = 0.01
+            epsilon = epsilon
         ).minimize( 
-            self.xent, 
+            self.obj, 
             var_list = self.W + self.bias_w 
         )
         adam_step.append( step )
@@ -1431,7 +1644,7 @@ class fofe_mention_net_v2( object ):
             raise NotImplementedError( 'hopelessness is your end' ) 
 
         cost = self.session.run(
-            self.momentum_step + [ self.xent ],
+            train_step + [ self.obj ],
             feed_dict = {
                 self.lr : self.config.learning_rate,
                 self.keep_prob : 1 - self.config.drop_rate,
@@ -1447,6 +1660,8 @@ class fofe_mention_net_v2( object ):
                 self.bow2 : mini_batch['word']['case-sensitive']['bow'],
                 self.lc : mini_batch['char']['left'],
                 self.rc : mini_batch['char']['right'],
+                self.linit : mini_batch['char']['left-initial'],
+                self.rinit : mini_batch['char']['right-initial'],
                 self.gaz : mini_batch['gaz'],
                 self.target : mini_batch['target']
             }
@@ -1456,7 +1671,7 @@ class fofe_mention_net_v2( object ):
 
     def eval( self, mini_batch ):
         c, pi, pv = self.session.run(
-            [ self.xent, self.predicted_indices, self.predicted_values ],
+            [ self.obj, self.predicted_indices, self.predicted_values ],
             feed_dict = {
                 self.keep_prob : 1,
                 self.lw1 : mini_batch['word']['case-insensitive']['left-incl'],
@@ -1471,6 +1686,8 @@ class fofe_mention_net_v2( object ):
                 self.bow2 : mini_batch['word']['case-sensitive']['bow'],
                 self.lc : mini_batch['char']['left'],
                 self.rc : mini_batch['char']['right'],
+                self.linit : mini_batch['char']['left-initial'],
+                self.rinit : mini_batch['char']['right-initial'],
                 self.gaz : mini_batch['gaz'],
                 self.target : mini_batch['target']
             }
