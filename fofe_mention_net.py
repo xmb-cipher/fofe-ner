@@ -1151,14 +1151,13 @@ class fofe_mention_net( object ):
 ########################################################################
 
 class fofe_mention_net_v2( object ):
-    def __init__( self, config = None, gpu_option = 0.9,
-                  word_alpha = 0.5, char_alpha = 0.8 ):
-        self.word_alpha = numpy.float32(word_alpha)
-        self.char_alpha = numpy.float32(char_alpha)
+    def __init__( self, config = None, gpu_option = 0.9 ):
 
         self.config = mention_config()
         if config is not None:
             self.config.__dict__.update( config.__dict__ )
+        self.word_alpha = numpy.float32(self.config.word_alpha)
+        self.char_alpha = numpy.float32(self.config.char_alpha)
 
         self.graph = tf.Graph()
 

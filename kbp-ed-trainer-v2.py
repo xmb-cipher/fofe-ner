@@ -94,8 +94,6 @@ if __name__ == '__main__':
                          help = 'skip test set when set' )
     parser.add_argument( '--logfile', type = str, default = None )
     parser.add_argument( '--optimizer', type = str, default = 'momentum', choices = ['momentum', 'adam'] )
-    parser.add_argument( '--version', type = int, default = 1, choices = [1, 2],
-                         help = 'version consumes less memory' )
 
     ########################################################################
 
@@ -142,10 +140,7 @@ if __name__ == '__main__':
 
     ########################################################################
 
-    if args.version == 2:
-        mention_net = fofe_mention_net_v2( config )
-    else:
-        mention_net = fofe_mention_net( config )
+    mention_net = fofe_mention_net_v2( config )
     mention_net.tofile( args.model )
 
     ########################################################################
@@ -154,14 +149,12 @@ if __name__ == '__main__':
     nt = config.n_label_type if config.is_2nd_pass else 0
     if config.language != 'cmn':
         numericizer1 = vocabulary( 
-            config.word_embedding + '-case-insensitive.wordlist', 
-            config.char_alpha, 
+            config.word_embedding + '-case-insensitive.wordlist',  
             False,
             n_label_type = nt 
         )
         numericizer2 = vocabulary( 
             config.word_embedding + '-case-sensitive.wordlist', 
-            config.char_alpha, 
             True,
             n_label_type = nt 
         )
@@ -175,7 +168,7 @@ if __name__ == '__main__':
             n_label_type = nt
         )
     
-
+    # kbp_gazetteer = [ set() for _ in xrange(args.n_label_type) ]
     try:
         logger.info( 'Loading compressed gazetteer' )
         pkl_path = os.path.join( config.data_path, 'kbp-gaz.pkl' )
@@ -198,75 +191,44 @@ if __name__ == '__main__':
                   LoadED( 'iflytek-clean-%s' % config.language ) 
             ) 
         )
-
-    if args.version == 2:
-        human = batch_constructor_v2( 
-            source,
-            numericizer1, 
-            numericizer2, 
-            gazetteer = kbp_gazetteer,  
-            window = config.n_window, 
-            n_label_type = config.n_label_type,
-            language = config.language,
-            is_2nd_pass = args.is_2nd_pass 
-        )
-    else:
-        human = batch_constructor( 
-            source,
-            numericizer1, 
-            numericizer2, 
-            gazetteer = kbp_gazetteer, 
-            alpha = config.word_alpha, 
-            window = config.n_window, 
-            n_label_type = config.n_label_type,
-            language = config.language,
-            is2ndPass = args.is_2nd_pass 
-        )
+    human = batch_constructor_v2( 
+        source,
+        numericizer1, 
+        numericizer2, 
+        gazetteer = kbp_gazetteer,  
+        window = config.n_window, 
+        n_label_type = config.n_label_type,
+        language = config.language,
+        is_2nd_pass = args.is_2nd_pass 
+    )
     logger.info( 'human: ' + str(human) )
     
-    if args.version == 2:
-        valid = batch_constructor_v2( 
-            imap( lambda x: x[:4], 
-                  LoadED( config.data_path + '/%s-eval-parsed' % config.language ) 
-            ), 
-            numericizer1, 
-            numericizer2, 
-            gazetteer = kbp_gazetteer, 
-            window = config.n_window, 
-            n_label_type = config.n_label_type,
-            language = config.language,
-            is_2nd_pass = args.is_2nd_pass 
-        )
-    else:
-        valid = batch_constructor( 
-            imap( lambda x: x[:4], 
-                  LoadED( config.data_path + '/%s-eval-parsed' % config.language ) 
-            ), 
-            numericizer1, 
-            numericizer2, 
-            gazetteer = kbp_gazetteer, 
-            alpha = config.word_alpha, 
-            window = config.n_window, 
-            n_label_type = config.n_label_type,
-            language = config.language,
-            is2ndPass = args.is_2nd_pass 
-        )
+    valid = batch_constructor_v2( 
+        imap( lambda x: x[:4], 
+              LoadED( config.data_path + '/%s-eval-parsed' % config.language ) 
+        ), 
+        numericizer1, 
+        numericizer2, 
+        gazetteer = kbp_gazetteer, 
+        window = config.n_window, 
+        n_label_type = config.n_label_type,
+        language = config.language,
+        is_2nd_pass = args.is_2nd_pass 
+    )
     logger.info( 'valid: ' + str(valid) )
     
-    # test = batch_constructor( 
-    #     imap( lambda x: x[:4], 
-    #           LoadED( config.data_path + '/%s-train-parsed' % config.language ) 
-    #     ),
-    #     numericizer1, 
-    #     numericizer2, 
-    #     gazetteer = kbp_gazetteer, 
-    #     alpha = config.word_alpha, 
-    #     window = config.n_window, 
-    #     n_label_type = config.n_label_type,
-    #     language = config.language,
-    #     is2ndPass = args.is_2nd_pass 
-    # )
-    test = human
+    test = batch_constructor_v2( 
+        imap( lambda x: x[:4], 
+              LoadED( config.data_path + '/%s-train-parsed' % config.language ) 
+        ),
+        numericizer1, 
+        numericizer2, 
+        gazetteer = kbp_gazetteer,  
+        window = config.n_window, 
+        n_label_type = config.n_label_type,
+        language = config.language,
+        is_2nd_pass = args.is_2nd_pass 
+    )
     logger.info( 'test: ' + str(test) )
 
     logger.info( 'data set loaded' )
@@ -284,11 +246,6 @@ if __name__ == '__main__':
         config.feature_choice, 
         True 
     )
-
-    if args.version == 2:
-        target = lambda x : x['target']
-    else:
-        target = lambda x : x[-1]
 
     for n_epoch in xrange( config.max_iter ):
 
@@ -315,9 +272,8 @@ if __name__ == '__main__':
                     'distant-supervision/data-chunk/sentence-%02d' % X,
                     'distant-supervision/data-chunk/labels-%02d' % X,
                     Y, None, 64 if not args.iflytek else 16  )
-            train = batch_constructor( dsp, numericizer1, numericizer2, 
-                                       gazetteer = kbp_gazetteer, 
-                                       alpha = config.word_alpha, 
+            train = batch_constructor_v2( dsp, numericizer1, numericizer2, 
+                                       gazetteer = kbp_gazetteer,  
                                        window = config.n_window, 
                                        n_label_type = config.n_label_type,
                                        language = config.language )
@@ -334,9 +290,9 @@ if __name__ == '__main__':
         pbar = tqdm( total = total )
 
         cost, cnt = 0, 0
-            
-        for x in ifilter(
-            lambda x : target(x).shape[0] == config.n_batch_size,
+        
+        for x in ifilter( 
+            lambda x : x['target'].shape[0] == config.n_batch_size,
             train.mini_batch_multi_thread( 
                 config.n_batch_size, 
                 True, 
@@ -355,9 +311,9 @@ if __name__ == '__main__':
             for example in x:
                 c = mention_net.train( example )
 
-                cost += c * target(example).shape[0]
-                cnt += target(example).shape[0]
-            pbar.update( target(example).shape[0] )
+                cost += c * example['target'].shape[0]
+                cnt += example['target'].shape[0]
+            pbar.update( example['target'].shape[0] )
 
         pbar.close()
         train_cost = cost / cnt 
@@ -380,9 +336,9 @@ if __name__ == '__main__':
 
                 c, pi, pv = mention_net.eval( example )
 
-                cost += c * target(example).shape[0]
-                cnt += target(example).shape[0]
-                for expected, estimate, probability in zip( target(example), pi, pv ):
+                cost += c * example['target'].shape[0]
+                cnt += example['target'].shape[0]
+                for expected, estimate, probability in zip( example['target'], pi, pv ):
                     print >> valid_predicted, '%d  %d  %s' % \
                             (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
 
@@ -401,9 +357,9 @@ if __name__ == '__main__':
 
                     c, pi, pv = mention_net.eval( example )
 
-                    cost += c * target(example).shape[0]
-                    cnt += target(example).shape[0]
-                    for expected, estimate, probability in zip( target(example), pi, pv ):
+                    cost += c * example['target'].shape[0]
+                    cnt += example['target'].shape[0]
+                    for expected, estimate, probability in zip( example['target'], pi, pv ):
                         print >> test_predicted, '%d  %d  %s' % \
                                 (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
 
@@ -424,10 +380,12 @@ if __name__ == '__main__':
             best_dev_fb1, best_threshold, best_algorithm = 0, [0.5, 0.5], [1, 1]
 
             if n_epoch >= config.max_iter / 2:
-                pp = [ p for p in PredictionParser( # KBP2015(  data_path + '/ed-eng-eval' ), 
-                                                    imap( lambda x: x[:4], LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ),
-                                                    valid_predicted_file, config.n_window,
-                                                    n_label_type = config.n_label_type ) ]
+                pp = [ p for p in PredictionParser( 
+                    imap( lambda x: x[:4], LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ),
+                    valid_predicted_file, 
+                    config.n_window,
+                    n_label_type = config.n_label_type 
+                ) ]
 
                 for algorithm in product( [1, 2], repeat = 2 ):
                     algorithm = list( algorithm )
@@ -449,35 +407,23 @@ if __name__ == '__main__':
             logger.info( 'cut-off: %s, algorithm: %-20s' % \
                          (str(best_threshold), str([ idx2algo[i] for i in best_algorithm ])) )
 
-            precision, recall, f1, info = evaluation( 
-                PredictionParser( 
-                    imap( lambda x: x[:4], LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ),
-                    valid_predicted_file, 
-                    config.n_window,
-                    n_label_type = config.n_label_type 
-                ), 
-                best_threshold, 
-                best_algorithm, 
-                True,
-                analysis = None, #analysis,
-                n_label_type = config.n_label_type 
-            )
+            precision, recall, f1, info = evaluation( PredictionParser( # KBP2015(  data_path + '/ed-eng-eval' ),
+                                                                      imap( lambda x: x[:4], LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ),
+                                                                      valid_predicted_file, config.n_window,
+                                                                      n_label_type = config.n_label_type ), 
+                                                      best_threshold, best_algorithm, True,
+                                                      analysis = None, #analysis,
+                                                      n_label_type = config.n_label_type )
             logger.info( '%s\n%s' % ('validation', info) ) 
 
             if not args.skip_test:
-                precision, recall, f1, info = evaluation( 
-                    PredictionParser( # KBP2015(  data_path + '/ed-eng-train' ),
-                        imap( lambda x: x[:4], LoadED( config.data_path + '/%s-train-parsed' % config.language ) ),
-                        test_predicted_file, 
-                        config.n_window,
-                        n_label_type = config.n_label_type 
-                    ), 
-                    best_threshold, 
-                    best_algorithm, 
-                    True,
-                    analysis = None, #analysis,
-                    n_label_type = config.n_label_type 
-                )
+                precision, recall, f1, info = evaluation( PredictionParser( # KBP2015(  data_path + '/ed-eng-train' ),
+                                                                          imap( lambda x: x[:4], LoadED( config.data_path + '/%s-train-parsed' % config.language ) ),
+                                                                          test_predicted_file, config.n_window,
+                                                                          n_label_type = config.n_label_type ), 
+                                                          best_threshold, best_algorithm, True,
+                                                          analysis = None, #analysis,
+                                                          n_label_type = config.n_label_type )
                 logger.info( '%s\n%s' % ('test', info) ) 
 
         mention_net.config.learning_rate *= 0.5 ** ((4./ config.max_iter) if config.drop_rate > 0 else (1./ 2))

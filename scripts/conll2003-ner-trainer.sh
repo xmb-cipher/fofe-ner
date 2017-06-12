@@ -10,6 +10,6 @@ function cleanup() {
 trap "cleanup" EXIT
 
 INFO "$@"
-${THIS_DIR}/../kbp-ed-trainer.py $@ #&> /dev/null
+${THIS_DIR}/../conll2003-ner-trainer.py $@ |& tee ${THIS_DIR}/../nimei-`hostname`
 
 exit $?

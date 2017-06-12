@@ -24,7 +24,7 @@ if __name__ == '__main__':
     ########## load gazetteer ##########
 
     gazetteer_path = os.path.join( os.path.dirname( __file__ ),
-                                   '../conll2003-model', 'ner-list' )
+                                   '../conll2003-model', 'ner-lst' )
     conll2003_gazetteer = gazetteer( gazetteer_path )
     # conll2003_gazetteer = [ set() for _ in xrange(10) ]
 
