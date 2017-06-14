@@ -52,7 +52,10 @@ if __name__ == '__main__':
         else:
             algorithm[config.algorithm] = 1
 
-        mention_net = fofe_mention_net( config )
+        if config.version == 2:
+            mention_net = fofe_mention_net_v2( config )
+        else:
+            mention_net = fofe_mention_net( config )
         mention_net.fromfile( basename )
         mention_net_list.append( mention_net )
 
@@ -109,16 +112,30 @@ if __name__ == '__main__':
             texts, tags, failures = processed.split( u'\n\n\n', 2 )
             texts = [ text.split( u'\n' ) for text in texts.split( u'\n\n' ) ]
             
+            target_func = lambda x: x['target'] if config.version == 2 else x[-1]
+
             for i, mention_net in enumerate( mention_net_list ):
-                data = batch_constructor( 
-                    imap( lambda x: x[:4], LoadED( full_name ) ),
-                    numericizer1, 
-                    numericizer2, 
-                    gazetteer = kbp_gazetteer, 
-                    alpha = config.word_alpha, window = config.n_window, 
-                    n_label_type = config.n_label_type,
-                    language = config.language 
-                )
+                if config.version == 2:
+                    data = batch_constructor_v2( 
+                        imap( lambda x: x[:4], LoadED( full_name ) ),
+                        numericizer1, 
+                        numericizer2, 
+                        gazetteer = kbp_gazetteer,  
+                        window = config.n_window, 
+                        n_label_type = config.n_label_type,
+                        language = config.language 
+                    )
+                else:
+                    data = batch_constructor( 
+                        imap( lambda x: x[:4], LoadED( full_name ) ),
+                        numericizer1, 
+                        numericizer2, 
+                        gazetteer = kbp_gazetteer, 
+                        alpha = config.word_alpha, 
+                        window = config.n_window, 
+                        n_label_type = config.n_label_type,
+                        language = config.language 
+                    )
                 logger.info( 'data: ' + str(data) )
 
                 prob = []
@@ -127,7 +144,7 @@ if __name__ == '__main__':
 
                     prob.append(
                         numpy.concatenate(
-                            ( example[-1].astype(numpy.float32).reshape(-1, 1),
+                            ( target_func(example).astype(numpy.float32).reshape(-1, 1),
                               pi.astype(numpy.float32).reshape(-1, 1),
                               pv ),
                             axis = 1

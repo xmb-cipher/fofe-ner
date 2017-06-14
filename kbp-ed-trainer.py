@@ -135,6 +135,11 @@ if __name__ == '__main__':
         args.feature_choice &= 2038
         logger.info( 'feature-choice now is %d' % args.feature_choice )
 
+    if args.language == 'cmn':
+        logger.info( 'user-input feature-choice was %d' % args.feature_choice )
+        args.feature_choice &= 1343
+        logger.info( 'feature-choice now is %d' % args.feature_choice )
+
     ########################################################################
 
     from fofe_mention_net import *
@@ -415,7 +420,10 @@ if __name__ == '__main__':
             ###################################################################################
 
             # logger.info( 'cost: %f (train), %f (valid), %f (test)', train_cost, valid_cost, test_cost )
-            logger.info( 'cost: %f (train), %f (valid), %f (test)', train_cost, valid_cost, test_cost )
+            if args.skip_test:
+                logger.info( 'cost: %f (train), %f (valid)', train_cost, valid_cost )
+            else:
+                logger.info( 'cost: %f (train), %f (valid), %f (test)', train_cost, valid_cost, test_cost )
 
             # algo_list = ['highest-first', 'longest-first', 'subsumption-removal']
             idx2algo = { 1: 'highest-first', 2: 'longest-first', 3:'subsumption-removal'  }

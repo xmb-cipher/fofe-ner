@@ -86,6 +86,7 @@ class mention_config( object ):
         self.l2 = 0
         self.n_pattern = 0
         self.optimizer = "momentum"
+        self.version = 1
 
         # KBP-specific config
         self.language = 'eng'
@@ -1201,7 +1202,6 @@ class fofe_mention_net_v2( object ):
 
     def __del__( self ):
         self.session.close()
-        logger.info( 'model released' )
 
 
 
@@ -1720,11 +1720,18 @@ class fofe_mention_net_v2( object ):
 
 
 if __name__ == '__main__':
-    config = mention_config()
-    mention_config.word_embedding = 'word2vec/reuters256'
-    mention_config.n_lable_type = 4
+    logging.basicConfig( 
+        format = '%(asctime)s : %(levelname)s : %(message)s', 
+        level = logging.DEBUG
+    )
 
-    mention_net = fofe_mention_net_v2()
+    config = mention_config()
+    config.word_embedding = 'word2vec/reuters256'
+    config.n_lable_type = 4
+
+    mention_net = fofe_mention_net_v2( config )
+    mention_net.tofile( 'hopeless' )
+    mention_net.fromfile( 'hopeless' )
 
 
 

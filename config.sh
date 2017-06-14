@@ -5,9 +5,12 @@ export EXPT=/eecs/research/asr/mingbin/ner-advance
 export YEAR=${YEAR:-2016}
 export N_COPY=1
 export N_EPOCH=256
+export VERSION=${VERSION:-1}
 
 # KBP nfold config
 export KBP_NFOLD_LANG=${KBP_NFOLD_LANG:-"eng"}
+export KBP_MODEL_BASE=${KBP_MODEL_BASE:-${KBP_NFOLD_LANG}${YEAR}v${VERSION}}
+
 if [ ${KBP_NFOLD_LANG} == "eng" ]
 then
     export KBP_NFOLD_EMBED=${EXPT}/"word2vec/gigaword/gigaword128"

@@ -13,7 +13,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument( 'eval_parsed', type = str, 
                          help = 'e.g. processed-data/eng-eval-parsed' )
-    parser.add_argument( 'model_dir', type = str,
+    parser.add_argument( 'model', type = str,
                          help = 'e.g. kbp-result' )
     parser.add_argument( 'gazetteer', type = str, 
                          help = 'e.g. processed-data/kbp-gaz.pkl' )
@@ -42,8 +42,9 @@ if __name__ == '__main__':
     for i in xrange(5):
         ########## load config ##########
 
-        basename = os.path.join( os.path.dirname(__file__),
-                                 '../kbp-result', 'kbp-split-%d' % i )
+        # basename = os.path.join( os.path.dirname(__file__),
+        #                          '../kbp-result', 'kbp-split-%d' % i )
+        basename = '%s-%d' % (args.model, i)
         with open( '%s.config' % basename, 'rb' ) as fp:
             config = cPickle.load( fp )
         logger.info( config.__dict__ )
@@ -79,30 +80,51 @@ if __name__ == '__main__':
 
         ########## load test set ##########
 
-        test = batch_constructor( source,
-                                  numericizer1, numericizer2, 
-                                  gazetteer = kbp_gazetteer, 
-                                  alpha = config.word_alpha, 
-                                  window = config.n_window, 
-                                  n_label_type = config.n_label_type,
-                                  language = config.language )
+        if config.version == 2:
+            test = batch_constructor_v2( 
+                source,
+                numericizer1, 
+                numericizer2, 
+                gazetteer = kbp_gazetteer, 
+                window = config.n_window, 
+                n_label_type = config.n_label_type,
+                language = config.language,
+                is_2nd_pass = config.is_2nd_pass
+            )
+        else:
+            test = batch_constructor( 
+                source,
+                numericizer1, 
+                numericizer2, 
+                gazetteer = kbp_gazetteer, 
+                alpha = config.word_alpha, 
+                window = config.n_window, 
+                n_label_type = config.n_label_type,
+                language = config.language,
+                is2ndPass = config.is_2nd_pass
+            )
         logger.info( 'test: ' + str(test) )
         logger.info( 'data set loaded' )
 
         ########## load network ##########
 
-        mention_net = fofe_mention_net( config )
+        if config.version == 2:
+            mention_net = fofe_mention_net_v2( config )
+        else:
+            mention_net = fofe_mention_net( config )
         mention_net.fromfile( basename )
         logger.info( 'model of split-%d loaded' % i )
 
         ########## compute probability ##########
+
+        target_func = lambda x: x['target'] if config.version == 2 else x[-1]
 
         target_i, probability_i = [], []
         for example in test.mini_batch_multi_thread( 
                             256 if config.feature_choice & (1 << 9) > 0 else 1024, 
                             False, 1, 1, config.feature_choice ):
             _, _, pv = mention_net.eval( example )
-            for e, p in zip( example[-1], pv ):
+            for e, p in zip( target_func(example), pv ):
                 target_i.append( e )
                 probability_i.append( p )
 
@@ -116,6 +138,7 @@ if __name__ == '__main__':
             target = target_i
             probability = probability_i
         else:
+            logger.info( numpy.not_equal(target, target_i).sum() )
             assert( numpy.array_equal( target, target_i ) )
             probability += probability_i
 

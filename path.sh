@@ -68,15 +68,74 @@ function CRITICAL() {
 
 
 function ServerList() {
+    wanted=${1}
+    wanted=${wanted:-75}
+    cnt=0
+
     for i in `seq 1 75`
     do 
         h=ea`printf "%02d" ${i}`
         ping -c 1 ${h} > /dev/null
         if [ $? -eq 0 ] 
         then
-            n_user=`ssh ${h} "who | cut -d' ' -f1 | sort | uniq | wc -l"`
-            k_mem=`ssh ${h} "head -1 /proc/meminfo | tr -s ' '  | cut -d' ' -f2"`
-            [ ${n_user} -eq 0 ] && [ ${k_mem} -gt 16000000 ] && echo ${h}
+            buff=`ssh ${h} "ps aux | cut -d' ' -f1 | grep xmb | wc -l; head -1 /proc/meminfo | tr -s ' '  | cut -d' ' -f2"`
+            n_user=`echo ${buff} | tail -1 | cut -d' ' -f1`
+            k_mem=`echo ${buff} | tail -1 | cut -d' ' -f2`
+            if [ ${n_user} -le 8 ] && [ ${k_mem} -gt 16000000 ]
+            then 
+                echo ${h}
+                cnt=$((cnt + 1))
+                [ ${cnt} -eq ${wanted} ] && break
+            fi
         fi
+    done
+}
+
+
+
+function RUN1 {
+    export VERSION=1
+    for lang in spa cmn eng
+    do
+        for yr in 2016 2015
+        do
+            export KBP_NFOLD_LANG=${lang}
+            export YEAR=${yr}
+            ${EXPT}/kbp-nfold-trainer.sh \
+                |& tee ${EXPT}/kbp-result/${lang}-${yr}-v${VERSION}.log
+            sleep 60
+        done
+    done
+}
+
+
+
+function RUN2 {
+    export VERSION=2
+    for lang in spa cmn eng
+    do
+        for yr in 2016 2015
+        do
+            export KBP_NFOLD_LANG=${lang}
+            export YEAR=${yr}
+            ${EXPT}/kbp-nfold-trainer.sh \
+                |& tee ${EXPT}/kbp-result/${lang}-${yr}-v${VERSION}.log
+            sleep 60
+        done
+    done
+}
+
+
+function RunV2 {
+    export VERSION=2
+    lang=${1}
+    lang=${lang:-eng}
+    for yr in 2016 2015
+    do
+        export KBP_NFOLD_LANG=${lang}
+        export YEAR=${yr} 
+        ${EXPT}/kbp-nfold-trainer.sh \
+            |& tee ${EXPT}/kbp-result/${lang}-${yr}-v${VERSION}.log
+        sleep 30
     done
 }

@@ -16,6 +16,8 @@ INFO "train-path     : ${train_path}"
 INFO "eval-path      : ${eval_path}"
 INFO "language       : ${language}"
 
+MODEL_BASE=${KBP_MODEL_BASE:-"kbp-split"}
+INFO "model-base     : ${MODEL_BASE}"
 
 dir=`mktemp -d`
 trap "rm -rf ${dir}" EXIT
@@ -99,19 +101,28 @@ fi
 INFO "training ... "
 
 PROCESSED_DATA=$(for i in $(seq 0 4); do printf "${dir}/split-${i} "; done)
-MODEL=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/kbp-split-${j} "; done)
-LOG_FILE=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/kbp-split-${j}.log "; done)
+MODEL=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/${MODEL_BASE}-${j} "; done)
+LOG_FILE=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/${MODEL_BASE}-${j}.log "; done)
 
-SERVER_LIST=`ServerList | tail -5 | tr '\n' ',' | sed s'/,$//'`
-# SERVER_LIST="ea31,ea32,ea33,ea34,ea35"
 
-INFO "5 trainers are running on ${SERVER_LIST}"
 
 # --cleanup option fails to remove folders
 # parallel -env --link -S "image,music,audio,voice,language" \
-parallel -env --link -j5 \
-    -S "${SERVER_LIST}" \
-    --basefile ${dir} \
+
+CMD="parallel -env --link -j1"
+
+if [ -z ${CUDA_VISIBLE_DEVICES} ]
+then
+    if [ -z ${SERVER_LIST} ] 
+    then
+        SERVER_LIST=`ServerList 5 | tr '\n' ',' | sed s'/,$//'`
+        # SERVER_LIST="ea31,ea32,ea33,ea34,ea35"
+    fi
+    INFO "5 trainers are running on ${SERVER_LIST}"
+    CMD="parallel -env --link -j5 -S ${SERVER_LIST} --basefile ${dir}"
+fi
+
+${CMD} \
     ${this_dir}/scripts/kbp-ed-trainer.sh \
     ::: ${embedding_path} \
     ::: $PROCESSED_DATA \
@@ -127,18 +138,23 @@ parallel -env --link -j5 \
     ::: "--language" ::: "${language}" \
     ::: "--model" :::+ $MODEL \
     ::: "--buffer_dir" ::: "${dir}" \
-    ::: "--logfile" :::+ $LOG_FILE
+    ::: "--logfile" :::+ $LOG_FILE \
+    ::: "--skip_test" \
+    ::: "--version" ::: ${VERSION} \
+
+    # ::: "--optimizer" ::: adam
  
 
+# export CUDA_VISIBLE_DEVICES=0
 INFO "evaluating ... "
 
 ${this_dir}/scripts/kbp-nfold-eval.py \
     ${eval_path} \
-    ${this_dir}/kbp-result \
+    ${this_dir}/kbp-result/${MODEL_BASE} \
     ${dir}/kbp-gaz.pkl \
     ${embedding_path} \
     ${dir}/combined |& tee ${dir}/report
 
-tail -32 ${dir}/report | \
-    mail -s "kbp-nfold-eval" `whoami`@eecs.yorku.ca
+tail -29 ${dir}/report | \
+    mail -s "kbp-nfold-eval-${KBP_NFOLD_LANG}-${YEAR}-v${VERSION}" `whoami`@eecs.yorku.ca
     

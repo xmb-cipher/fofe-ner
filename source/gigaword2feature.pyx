@@ -2108,6 +2108,7 @@ class batch_constructor_v2:
         cdef int n
         cdef string phrase
         cdef int phrase_cpy_len
+        cdef int phrase_length
         cdef int [:] phrase_view
         cdef int [:] initial_view
 
@@ -2169,7 +2170,7 @@ class batch_constructor_v2:
                 phrase_view = phrase_array
 
                 init_array = numpy.asarray(
-                    [ ord(c) for c in list( 
+                    [ ord(c) % 128 for c in list( 
                         ''.join( [ w[0] for w in sentence.sentence[begin_idx:end_idx] ] ) 
                     ) ],
                     dtype = numpy.int32
@@ -2178,6 +2179,13 @@ class batch_constructor_v2:
 
             if feature_choice & 256 > 0:
                 gaz_buff[cnt][next_example.gazetteer] = 1
+
+            if feature_choice & 128 > 0:
+                phrase_length = end_idx - begin_idx
+                with nogil:
+                    for j in range( phrase_length ):
+                        linitv[cnt][j] = initial_view[j]
+                        rinitv[cnt][j] = initial_view[phrase_length - j - 1]
 
             with nogil:
                 label_view[cnt] = next_example.label
@@ -2216,12 +2224,6 @@ class batch_constructor_v2:
 
             if feature_choice & 32 > 0:
                 bowlen = max( bowlen, sentence.insert_bow( begin_idx, end_idx, bow2[cnt] ) )
-
-            if feature_choice & 128 > 0:
-                with nogil:
-                    for j in range( bowlen ):
-                        linitv[cnt][j] = initial_view[j]
-                        rinitv[cnt][j] = initial_view[bowlen - j - 1]
 
             cnt += 1 
             if cnt % n_batch_size == 0 or (i + 1) == len(candidate):
