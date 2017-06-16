@@ -6,18 +6,21 @@ export THIS_DIR=$(cd $(dirname $0); pwd)
 source ${THIS_DIR}/scripts/utils.sh
 
 
-if [ $# -ne 3 ]
+if [ $# -lt 3 ] || [ $# -gt 4 ]
 then
 	CRITICAL "Incorrect command-line argument(s)!"
-	printf "Usage: $0 <model> <source> <gold> \n" 1>&2
+	printf "Usage: $0 <model> <source> <gold> [--nfold] \n" 1>&2
 	printf "    <model>  : a trained model returned by kbp-system.py \n" 1>&2
 	printf "    <source> : directory containing labelless files returned by kbp-xml-parser.py \n" 1>&2
+	printf "    <gold>   : official solution \n" 1>&2
+	printf "    [nfold]  : whether single model or 5 models \n" 1>&2
 	exit 1
 fi
 
 MODEL=$1
 IN_DIR=$2
 GOLD=$3
+NFOLD=$4
 INFO "MODEL == ${MODEL}"
 INFO "IN_DIR == ${IN_DIR}"
 
@@ -43,7 +46,7 @@ ${THIS_DIR}/scripts/kbp-ed-evaluator.py \
 	${MODEL} \
 	${IN_DIR} \
 	${BUFFER_DIR}/labeled \
-	--nfold
+	${NFOLD}
 INFO "Labels generated."
 
 ${THIS_DIR}/scripts/reformat.py \

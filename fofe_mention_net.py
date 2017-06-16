@@ -1316,7 +1316,7 @@ class fofe_mention_net_v2( object ):
                 elif ith == 2:
                     in1 += self.config.n_word_embedding1
                 elif ith == 5:
-                    in1 += self.config.n_word_embedding1
+                    in1 += self.config.n_word_embedding2
                 elif ith in [6, 7]:
                 # elif ith == 6:
                     in1 += self.config.n_char_embedding * 2
@@ -1396,7 +1396,7 @@ class fofe_mention_net_v2( object ):
             ).astype( numpy.float32 ) for _ in xrange(2)
         ]
         self.char_embed[127] = 0
-        self.conv_embed[127] = 0
+        # self.conv_embed[127] = 0
         self.char_embed = tf.Variable( self.char_embed )
         self.conv_embed = tf.Variable( self.conv_embed )
 
@@ -1439,7 +1439,11 @@ class fofe_mention_net_v2( object ):
             self.bias_w.append( tf.Variable( tf.zeros([o]) ) )
 
 
-        def fofe( context, alpha, embed ):
+        def fofe( context, alpha, embed, pad ):
+            mask = tf.expand_dims(
+                tf.cast( tf.not_equal( context, pad ), dtype = tf.float32 ),
+                axis = -1
+            )
             batch_size, context_size = tf.unstack( tf.shape( context ) )
             result = tf.squeeze( 
                 tf.matmul( 
@@ -1447,40 +1451,49 @@ class fofe_mention_net_v2( object ):
                         alpha[:batch_size, :context_size], 
                         [batch_size, 1, -1] 
                     ),
-                    tf.gather( embed, context ) ), 
+                    tf.multiply( tf.gather( embed, context ), mask ) ), 
                 axis = [1] 
             )
             return result
 
         lw1p, rw1p, lw2p, rw2p = [ fofe( 
-                x, self.word_alpha, self.word_embed1 
+                x, self.word_alpha, self.word_embed1, self.pad1 
             ) for x in [ self.lw1, self.rw1, self.lw2, self.rw2 ] 
         ]
 
         lw3p, rw3p, lw4p, rw4p = [ fofe( 
-                x, self.word_alpha, self.word_embed2 
+                x, self.word_alpha, self.word_embed2, self.pad2
             ) for x in [ self.lw3, self.rw3, self.lw4, self.rw4 ] 
         ]
 
-        def bow( words, embed ):
-            # batch_size, bow_size = tf.unstack( tf.shape( words ) )
+        def bow( words, embed, pad ):
+            mask = tf.expand_dims(
+                tf.cast( tf.not_equal( words, pad ), dtype = tf.float32 ),
+                axis = -1
+            )
             result = tf.reduce_sum( 
-                tf.gather( embed, words ), 
+                tf.multiply( tf.gather( embed, words ), mask ), 
                 axis = [1] 
             )
             return result
 
-        bow1p = bow( self.bow1, self.word_embed1 )
-        bow2p = bow( self.bow2, self.word_embed2 )
+        bow1p = bow( self.bow1, self.word_embed1, self.pad1 )
+        bow2p = bow( self.bow2, self.word_embed2, self.pad2 )
 
-        lcp = fofe( self.lc, self.char_alpha, self.char_embed )
-        rcp = fofe( self.rc, self.char_alpha, self.char_embed )
-        linitp = fofe( self.linit, self.char_alpha, self.char_embed )
-        rinitp = fofe( self.rinit, self.char_alpha, self.char_embed )
+        lcp = fofe( self.lc[:,1:], self.char_alpha, self.char_embed, 127 )
+        rcp = fofe( self.rc[:,1:], self.char_alpha, self.char_embed, 127 )
+        linitp = fofe( self.linit, self.char_alpha, self.char_embed, 127 )
+        rinitp = fofe( self.rinit, self.char_alpha, self.char_embed, 127 )
         gazp = tf.matmul( self.gaz, self.ner_embed )
 
         char_cube = tf.expand_dims( 
-            tf.gather( self.conv_embed, self.lc ), 
+            # tf.multiply(
+                tf.gather( self.conv_embed, self.lc ), 
+            #     tf.cast(
+            #         tf.not_equal( self.lc, 127 ),
+            #         dtype = tf.float32
+            #     )
+            # ),
             3 
         )
         char_conv = [ 
@@ -1528,10 +1541,10 @@ class fofe_mention_net_v2( object ):
         ) 
 
         self.obj = self.xent \
-                    + 0.01 * tf.nn.l2_loss(self.word_embed1[self.pad1]) \
-                    + 0.01 * tf.nn.l2_loss(self.word_embed2[self.pad2]) \
-                    + 0.01 * tf.nn.l2_loss(self.char_embed[127]) \
-                    + 0.01 * tf.nn.l2_loss(self.conv_embed[127])
+                    # + 0.01 * tf.nn.l2_loss(self.word_embed1[self.pad1]) \
+                    # + 0.01 * tf.nn.l2_loss(self.word_embed2[self.pad2]) \
+                    # + 0.01 * tf.nn.l2_loss(self.char_embed[127]) \
+                    # + 0.01 * tf.nn.l2_loss(self.conv_embed[127])
 
         self.predicted_values = tf.nn.softmax( layer_output[-1] )
         self.predicted_indices = tf.argmax( layer_output[-1], axis = 1 )
