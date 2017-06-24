@@ -482,8 +482,18 @@ class chinese_word_vocab( vocabulary ):
                 if w != '<unk>' and self.word2idx[w] >= self.n_word:
                     self.word2idx.pop(w, None)
 
+        self.char2stroke = {}
         self.pad_idx = self.n_word
 
+
+    def loadWubiKeyStroke( self, wubi_keystroke ):
+        with codecs.open( wubi_keystroke, 'rb', 'utf8' ) as fp:
+            for line in fp:
+                head, tail = line.strip().split(None, 2)
+                self.char2stroke[head] = numpy.asarray(
+                    [int(n) for n in tail.split(u',')]
+                ).astype( numpy.int32 )
+        logger.info( 'wubi keystrokes loaded' )
 
 
     def sentence2indices( self, sentence ):
@@ -492,13 +502,23 @@ class chinese_word_vocab( vocabulary ):
                    imap( lambda w: u'<numeric>' if re.match(self.number, w) else w, sentence ) ]
         return result
 
+    def char2wubi( self, w ):
+        has_chinese = any( u'\u4e00' <= c <= u'\u9fff' for c in list(w) )
+        if has_chinese:
+            if w in self.char2stroke:
+                return u''.join(chr(n) for n in self.char2stroke[w])
+            else:
+                return u' '
+        else:
+            return u''.join( c if ord(c) < 128 else chr(127) for c in list(w) )
 
-    def char_fofe_of_word( self ):
-        raise AttributeError( "'chinese_word_vocab' does not provide 'char_fofe_of_word'" )
+
+    # def char_fofe_of_word( self, word ):
+    #     raise AttributeError( "'chinese_word_vocab' does not provide 'char_fofe_of_word'" )
 
 
-    def char_fofe_of_phrase( self ):
-        raise AttributeError( "'chinese_word_vocab' does not provide 'char_fofe_of_phrase'" )
+    # def char_fofe_of_phrase( self, phrase ):
+    #     raise AttributeError( "'chinese_word_vocab' does not provide 'char_fofe_of_phrase'" )
 
 
     def padding_index( self ):
@@ -537,10 +557,16 @@ cdef class processed_sentence:
 
         if language != 'cmn':
             for w in sentence:
-                self.sentence.push_back( u''.join( c if ord(c) < 128 else chr(ord(c) % 32) for c in list(w) ) )
+                self.sentence.push_back(  
+                    u''.join( c if ord(c) < 128 else chr(ord(c) % 32) for c in list(w) ) 
+                )
             vocab = numericizer
             vocab.sentence2indices( self.sentence, self.numeric )
         else:
+            for w in sentence:
+                self.sentence.push_back(
+                    numericizer.char2wubi( w )
+                )
             self.numeric = numericizer.sentence2indices( sentence )
 
         cdef vector[int] idx_buffer
@@ -859,24 +885,39 @@ class batch_constructor:
                     label1st = None
 
                 if language != 'cmn': 
-                    self.sentence1.append( processed_sentence( sentence, numericizer1, 
-                                                               alpha, language,
-                                                               label1st ) )
-                    self.sentence2.append( processed_sentence( sentence, numericizer2, 
-                                                               alpha, language,
-                                                               label1st ) )
+                    self.sentence1.append( processed_sentence( 
+                        sentence, 
+                        numericizer1, 
+                        alpha, 
+                        language,
+                        label1st 
+                    ) )
+                    self.sentence2.append( processed_sentence( 
+                        sentence, numericizer2, 
+                        alpha, 
+                        language,
+                        label1st 
+                    ) )
                 else:
                     char_sequence, word_sequence = [], []
                     for token in sentence:
                         c, w = token.split( u'|iNCML|' )
                         char_sequence.append( c )
                         word_sequence.append( w )
-                    self.sentence1.append( processed_sentence( char_sequence, numericizer1,
-                                                               alpha, language,
-                                                               label1st ) )
-                    self.sentence2.append( processed_sentence( word_sequence, numericizer2,
-                                                               alpha, language,
-                                                               label1st ) )
+                    self.sentence1.append( processed_sentence( 
+                        char_sequence, 
+                        numericizer1,
+                        alpha, 
+                        language,
+                        label1st 
+                    ) )
+                    self.sentence2.append( processed_sentence( 
+                        word_sequence, 
+                        numericizer2,
+                        alpha, 
+                        language,
+                        label1st 
+                    ) )
 
         self.positive = numpy.asarray( self.positive, dtype = numpy.int32 )
         self.overlap = numpy.asarray( self.overlap, dtype = numpy.int32 )
@@ -977,9 +1018,9 @@ class batch_constructor:
         cdef int phrase_max_length = 10
         cdef float bigram_alpha
 
-        has_char_feature = feature_choice & (64 | 128 | 512 | 1024)
-        assert not has_char_feature or self.language != 'cmn', \
-                'Chinese is modeled at character level. '
+        # has_char_feature = feature_choice & (64 | 128 | 512 | 1024)
+        # assert not has_char_feature or self.language != 'cmn', \
+        #         'Chinese is modeled at character level. '
 
         if n_copy > 1:
             shuffle_needed = True

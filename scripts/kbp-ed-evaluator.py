@@ -24,6 +24,7 @@ if __name__ == '__main__':
     parser.add_argument( 'basename', type = str )
     parser.add_argument( 'in_dir', type = str )
     parser.add_argument( 'out_dir', type = str )
+    parser.add_argument( '--2nd_basename', type = str, default = None )
     parser.add_argument( '--nfold', action = 'store_true', default = False )
 
     args = parser.parse_args()
@@ -68,6 +69,7 @@ if __name__ == '__main__':
         numericizer1 = chinese_word_vocab( args.basename + '-char.wordlist' )
         numericizer2 = chinese_word_vocab( args.basename + \
                             ('-avg.wordlist' if config.average else '-word.wordlist') )
+        numericizer1.loadWubiKeyStroke( args.basename + '.wubi' )
 
     logger.info( 'config, model & vocab loaded' )
 
@@ -95,8 +97,9 @@ if __name__ == '__main__':
         elif algorithm[a] > algorithm[algo]:
             algo = a
     algorithm = list(algo)
-    logger.info( 'algorithm: %s' % str(algorithm) )
 
+    logger.info( 'algorithm: %s' % str(algorithm) )
+    # algorithm, threshold = [2, 1], [0.4, 0.6]
 
     # ==========================================================================================
 

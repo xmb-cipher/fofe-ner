@@ -16,8 +16,15 @@ INFO "train-path     : ${train_path}"
 INFO "eval-path      : ${eval_path}"
 INFO "language       : ${language}"
 
+
 MODEL_BASE=${KBP_MODEL_BASE:-"kbp-split"}
 INFO "model-base     : ${MODEL_BASE}"
+
+if [ ! -z ${PASS2ND} ]
+then
+    INFO "2nd-pass training"
+    MODEL_BASE="${MODEL_BASE}-2nd"
+fi
 
 dir=`mktemp -d`
 trap "rm -rf ${dir}" EXIT
@@ -141,8 +148,8 @@ ${CMD} \
     ::: "--logfile" :::+ $LOG_FILE \
     ::: "--skip_test" \
     ::: "--version" ::: ${VERSION} \
-
-    # ::: "--optimizer" ::: adam
+    ::: "--average" \
+    ${OPTION_2ND} 
  
 
 # export CUDA_VISIBLE_DEVICES=0

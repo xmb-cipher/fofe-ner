@@ -28,8 +28,8 @@ export PATH=/eecs/research/asr/mingbin/gcc-4.9/bin:${PATH}
 export LIBRARY_PATH=/eecs/research/asr/mingbin/gcc-4.9/lib64
 export LD_LIBRARY_PATH=/eecs/research/asr/mingbin/gcc-4.9/lib64:${LD_LIBRARY_PATH}
 export LD_LIBRARY_PATH=/eecs/research/asr/mingbin/mkl/mkl/lib/intel64:${LD_LIBRARY_PATH}
-export OMP_NUM_THREADS=24
-export MKL_NUM_THREADS=24 
+export OMP_NUM_THREADS=32
+export MKL_NUM_THREADS=32 
 
 
 ################
@@ -139,3 +139,23 @@ function RunV2 {
         sleep 30
     done
 }
+
+
+# function nfold2single {
+#     base=${1}
+#     if [ -z ${base} ]
+#     then
+#         CRITICAL "no basename is provided"
+#     else
+#         for i in `seq 0 4`
+#         do
+#             ln -s \
+#                 "${base}-case-sensitive.wordlist" \
+#                 "${base}-${i}-case-sensitive.wordlist"
+#             ln -s \
+#                 "${base}-case-insensitive.wordlist" \
+#                 "${base}-${i}-case-insensitive.wordlist"
+#             ln -s "${base}.pkl" "${base}-${i}.pkl"
+#         done
+#     fi
+# }

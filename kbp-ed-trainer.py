@@ -94,7 +94,7 @@ if __name__ == '__main__':
                          help = 'skip test set when set' )
     parser.add_argument( '--logfile', type = str, default = None )
     parser.add_argument( '--optimizer', type = str, default = 'momentum', choices = ['momentum', 'adam'] )
-    parser.add_argument( '--version', type = int, default = 1, choices = [1, 2],
+    parser.add_argument( '--version', type = int, default = 1, choices = [1, 2, 3],
                          help = 'version consumes less memory' )
 
     ########################################################################
@@ -137,7 +137,7 @@ if __name__ == '__main__':
 
     if args.language == 'cmn':
         logger.info( 'user-input feature-choice was %d' % args.feature_choice )
-        args.feature_choice &= 1343
+        args.feature_choice &= 895
         logger.info( 'feature-choice now is %d' % args.feature_choice )
 
     ########################################################################
@@ -149,6 +149,16 @@ if __name__ == '__main__':
 
     if args.version == 2:
         mention_net = fofe_mention_net_v2( config )
+    elif args.version == 3:
+        import torch.optim as optim
+        mention_net = fofe_mention_net_v3( config )
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            mention_net.optimizer,
+            mode = 'min',
+            factor = 0.5,
+            patience = 16,
+            min_lr = 0.001
+        )
     else:
         mention_net = fofe_mention_net( config )
     mention_net.tofile( args.model )
@@ -173,12 +183,14 @@ if __name__ == '__main__':
     else:
         numericizer1 = chinese_word_vocab( 
             config.word_embedding + '-char.wordlist',
-            n_label_type = nt
+            n_label_type = nt,
         )
         numericizer2 = chinese_word_vocab( 
-            config.word_embedding + ('-avg.wordlist' if config.average else '-word.wordlist'),
+            config.word_embedding + \
+                ('-avg.wordlist' if config.average else '-word.wordlist'),
             n_label_type = nt
         )
+        numericizer1.loadWubiKeyStroke( config.word_embedding + '.wubi' )
     
 
     try:
@@ -204,7 +216,7 @@ if __name__ == '__main__':
             ) 
         )
 
-    if args.version == 2:
+    if args.version > 1:
         human = batch_constructor_v2( 
             source,
             numericizer1, 
@@ -229,7 +241,7 @@ if __name__ == '__main__':
         )
     logger.info( 'human: ' + str(human) )
     
-    if args.version == 2:
+    if args.version > 1:
         valid = batch_constructor_v2( 
             imap( lambda x: x[:4], 
                   LoadED( config.data_path + '/%s-eval-parsed' % config.language ) 
@@ -290,7 +302,7 @@ if __name__ == '__main__':
         True 
     )
 
-    if args.version == 2:
+    if args.version > 1:
         target = lambda x : x['target']
     else:
         target = lambda x : x[-1]
@@ -320,12 +332,16 @@ if __name__ == '__main__':
                     'distant-supervision/data-chunk/sentence-%02d' % X,
                     'distant-supervision/data-chunk/labels-%02d' % X,
                     Y, None, 64 if not args.iflytek else 16  )
-            train = batch_constructor( dsp, numericizer1, numericizer2, 
-                                       gazetteer = kbp_gazetteer, 
-                                       alpha = config.word_alpha, 
-                                       window = config.n_window, 
-                                       n_label_type = config.n_label_type,
-                                       language = config.language )
+            train = batch_constructor( 
+                dsp, 
+                numericizer1, 
+                numericizer2, 
+                gazetteer = kbp_gazetteer, 
+                alpha = config.word_alpha, 
+                window = config.n_window, 
+                n_label_type = config.n_label_type,
+                language = config.language 
+            )
             logger.info( 'train: ' + str(train) )
         else:
             train = human
@@ -341,7 +357,7 @@ if __name__ == '__main__':
         cost, cnt = 0, 0
             
         for x in ifilter(
-            lambda x : target(x).shape[0] == config.n_batch_size,
+            lambda x : len(target(x)) == config.n_batch_size,
             train.mini_batch_multi_thread( 
                 config.n_batch_size, 
                 True, 
@@ -360,9 +376,9 @@ if __name__ == '__main__':
             for example in x:
                 c = mention_net.train( example )
 
-                cost += c * target(example).shape[0]
-                cnt += target(example).shape[0]
-            pbar.update( target(example).shape[0] )
+                cost += c * len(target(example))
+                cnt += len(target(example))
+            pbar.update( len(target(example)) )
 
         pbar.close()
         train_cost = cost / cnt 
@@ -385,8 +401,8 @@ if __name__ == '__main__':
 
                 c, pi, pv = mention_net.eval( example )
 
-                cost += c * target(example).shape[0]
-                cnt += target(example).shape[0]
+                cost += c * len(target(example))
+                cnt += len(target(example))
                 for expected, estimate, probability in zip( target(example), pi, pv ):
                     print >> valid_predicted, '%d  %d  %s' % \
                             (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
@@ -406,8 +422,8 @@ if __name__ == '__main__':
 
                     c, pi, pv = mention_net.eval( example )
 
-                    cost += c * target(example).shape[0]
-                    cnt += target(example).shape[0]
+                    cost += c * len(target(example))
+                    cnt += len(target(example))
                     for expected, estimate, probability in zip( target(example), pi, pv ):
                         print >> test_predicted, '%d  %d  %s' % \
                                 (expected, estimate, '  '.join( [('%f' % x) for x in probability.tolist()] ))
@@ -433,9 +449,11 @@ if __name__ == '__main__':
 
             if n_epoch >= config.max_iter / 2:
                 pp = [ p for p in PredictionParser( # KBP2015(  data_path + '/ed-eng-eval' ), 
-                                                    imap( lambda x: x[:4], LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ),
-                                                    valid_predicted_file, config.n_window,
-                                                    n_label_type = config.n_label_type ) ]
+                    imap( lambda x: x[:4], LoadED( config.data_path + '/%s-eval-parsed' % config.language ) ),
+                    valid_predicted_file, 
+                    config.n_window,
+                    n_label_type = config.n_label_type 
+                ) ]
 
                 for algorithm in product( [1, 2], repeat = 2 ):
                     algorithm = list( algorithm )
@@ -488,7 +506,10 @@ if __name__ == '__main__':
                 )
                 logger.info( '%s\n%s' % ('test', info) ) 
 
-        mention_net.config.learning_rate *= 0.5 ** ((4./ config.max_iter) if config.drop_rate > 0 else (1./ 2))
+        if args.version == 3:
+            scheduler.step( train_cost )
+        else:
+            mention_net.config.learning_rate *= 0.5 ** ((4./ config.max_iter) if config.drop_rate > 0 else (1./ 2))
         mention_net.config.drop_rate *= 0.5 ** (2./ config.max_iter)
 
     logger.info( 'results are written in kbp-result/kbp-{valid,test}.predicted' )

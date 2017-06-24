@@ -67,15 +67,31 @@ if __name__ == '__main__':
 
         source = imap( lambda x: x[:4], LoadED( args.eval_parsed ) )
 
+        nt = config.n_label_type if config.is_2nd_pass else 0
         if config.language != 'cmn':
-            numericizer1 = vocabulary( args.embedding + '-case-insensitive.wordlist', 
-                                       config.char_alpha, False )
-            numericizer2 = vocabulary( args.embedding + '-case-sensitive.wordlist', 
-                                       config.char_alpha, True )
+            numericizer1 = vocabulary( 
+                args.embedding + '-case-insensitive.wordlist', 
+                config.char_alpha, 
+                False,
+                n_label_type = nt
+            )
+            numericizer2 = vocabulary( 
+                args.embedding + '-case-sensitive.wordlist', 
+                config.char_alpha, 
+                True,
+                n_label_type = nt
+            )
         else:
-            numericizer1 = chinese_word_vocab( args.embedding + '-char.wordlist' )
-            numericizer2 = chinese_word_vocab( args.embedding + \
-                                ('-avg.wordlist' if config.average else '-word.wordlist') )
+            numericizer1 = chinese_word_vocab( 
+                args.embedding + '-char.wordlist',
+                n_label_type = nt
+            )
+            numericizer2 = chinese_word_vocab( 
+                args.embedding + \
+                    ('-avg.wordlist' if config.average else '-word.wordlist'),
+                n_label_type = nt
+            )
+            numericizer1.loadWubiKeyStroke( args.embedding + '.wubi' )
         logger.info( 'numericizer initiated' )
 
         ########## load test set ##########
@@ -168,13 +184,20 @@ if __name__ == '__main__':
             print >> fp, '%d  %d  %s' % \
                     (t, e, '  '.join( [('%f' % x) for x in p.tolist()] ))
 
-    pp = [ p for p in PredictionParser( imap( lambda x: x[:4], LoadED( args.eval_parsed ) ),
-                                        args.combined_out, 
-                                        window,
-                                        n_label_type = label_type ) ]
+    pp = [ p for p in PredictionParser( 
+        imap( lambda x: x[:4], LoadED( args.eval_parsed ) ),
+        args.combined_out, 
+        window,
+        n_label_type = label_type 
+    ) ]
 
-    _, _, best_dev_fb1, info = evaluation( pp, threshold, algorithm, True, 
-                                           n_label_type = label_type )
+    _, _, best_dev_fb1, info = evaluation( 
+        pp, 
+        threshold, 
+        algorithm, 
+        True, 
+        n_label_type = label_type 
+    )
     logger.info( '%s\n%s' % ('validation', info) ) 
 
     ########## check the true power of the model ##########
@@ -189,8 +212,13 @@ if __name__ == '__main__':
         for threshold in product( [ 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 ], repeat = 2 ):
             threshold = list( threshold )
 
-            precision, recall, f1, info = evaluation( pp, threshold, algorithm, True,
-                                                   n_label_type = label_type )
+            precision, recall, f1, info = evaluation( 
+                pp, 
+                threshold, 
+                algorithm, 
+                True,
+                n_label_type = label_type 
+            )
             if f1 > best_dev_fb1:
                 best_dev_fb1, best_threshold, best_algorithm = f1, threshold, algorithm
                 best_precision, best_recall = precision, recall

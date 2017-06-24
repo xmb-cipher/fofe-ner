@@ -7,6 +7,13 @@ export N_COPY=1
 export N_EPOCH=256
 export VERSION=${VERSION:-1}
 
+if [ ! -z ${PASS2ND} ]
+then
+    export OPTION_2ND="::: --is_2nd_pass"
+else
+    export OPTION_2ND=""
+fi
+
 # KBP nfold config
 export KBP_NFOLD_LANG=${KBP_NFOLD_LANG:-"eng"}
 export KBP_MODEL_BASE=${KBP_MODEL_BASE:-${KBP_NFOLD_LANG}${YEAR}v${VERSION}}
