@@ -1,0 +1,3 @@
+[submodule "processed-data"]
+	path = processed-data
+	url = http://github.com/xmb-cipher/EDL-DATA.git
