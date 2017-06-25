@@ -96,7 +96,7 @@ if __name__ == '__main__':
 
         ########## load test set ##########
 
-        if config.version == 2:
+        if config.version > 1:
             test = batch_constructor_v2( 
                 source,
                 numericizer1, 
@@ -126,6 +126,8 @@ if __name__ == '__main__':
 
         if config.version == 2:
             mention_net = fofe_mention_net_v2( config )
+        elif config.version == 3:
+            mention_net = fofe_mention_net_v3( config )
         else:
             mention_net = fofe_mention_net( config )
         mention_net.fromfile( basename )
@@ -133,7 +135,7 @@ if __name__ == '__main__':
 
         ########## compute probability ##########
 
-        target_func = lambda x: x['target'] if config.version == 2 else x[-1]
+        target_func = lambda x: x['target'] if config.version > 1 else x[-1]
 
         target_i, probability_i = [], []
         for example in test.mini_batch_multi_thread( 

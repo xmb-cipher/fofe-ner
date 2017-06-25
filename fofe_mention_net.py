@@ -1672,10 +1672,6 @@ import logging
 import cPickle
 import time
 
-from fofe_mention_net import mention_config, mention_net_base
-
-logger = logging.getLogger( __name__ )
-
 
 
 class FofeEncoding(nn.Module):
@@ -1683,10 +1679,32 @@ class FofeEncoding(nn.Module):
         super(FofeEncoding, self).__init__()
 
         self.alpha = alpha
+        self.default_context_size = 32
 
         self.register_buffer(
             '_alpha',  
-            torch.pow(self.alpha, torch.arange(0, 32)).resize_(1, 1, -1)
+            torch.pow(
+                self.alpha, 
+                torch.arange(0, self.default_context_size)
+            ).resize_(1, 1, -1)
+        )
+
+
+    def state_dict(self, destination = None, prefix = ''):
+        self._resize_buff( self.default_context_size )
+        return super(FofeEncoding, self).state_dict(
+            destination = destination,
+            prefix = prefix
+        )
+
+
+    def _resize_buff(self, n):
+        self._alpha.resize_(
+            1, 1, n
+        ).copy_(
+            torch.pow(
+                self.alpha, torch.arange(0, n)
+            ).view(1, 1, -1)
         )
 
 
@@ -1696,13 +1714,7 @@ class FofeEncoding(nn.Module):
         batch_size, context_size = x.size(0), x.size(1)
 
         if context_size > self._alpha.nelement():
-            self._alpha.resize_(
-                1, 1, context_size
-            ).copy_(
-                torch.pow(
-                    self.alpha, torch.arange(0, context_size)
-                ).view(1, 1, -1)
-            )
+            self._resize_buff( context_size )
 
         y = torch.bmm(
             Variable(
@@ -2018,6 +2030,12 @@ class fofe_mention_net_v3( mention_net_base ):
         #         lr = config.learning_rate,
         #     )
 
+        self.use_cuda = torch.cuda.is_available()
+        logger.info( 'use_cuda == %s' % str(self.use_cuda) )
+        if self.use_cuda:
+            torch.backends.cudnn.benchmark = True
+            self.network.cuda()
+
 
 
     def train( self, mini_batch ):
@@ -2032,7 +2050,10 @@ class fofe_mention_net_v3( mention_net_base ):
         cost = self.criterion.forward( res, mini_batch['target'] )
 
         cost.backward()
-        ans = cost.data.numpy()[0]
+        if self.use_cuda:
+            ans = cost.data.cpu().numpy()[0]
+        else:
+            ans = cost.data.numpy()[0]
 
         self.optimizer.step()
 
@@ -2047,10 +2068,21 @@ class fofe_mention_net_v3( mention_net_base ):
         mini_batch = self._recursive_convert( mini_batch )
         res = self.network.forward( mini_batch )
 
-        cost = self.criterion.forward( res,  mini_batch['target'] )
-        values, indices = res.exp().max( 1 )
+        cost = self.criterion.forward( res, mini_batch['target'] )
+        values = res.exp()
+        _, indices = values.max( 1 )
+        if self.use_cuda:
+            cost = cost.data.cpu().numpy()[0]
+            values = values.data.cpu().numpy()
+            indices = indices.data.cpu().numpy()
+            mini_batch['target'] = mini_batch['target'].data.cpu().numpy()
+        else:
+            cost = cost.data.numpy()[0]
+            values = values.data.numpy()
+            indices = indices.data.numpy()
+            mini_batch['target'] = mini_batch['target'].data.numpy()
 
-        return cost.data.numpy()[0], indices.data.numpy(), values.data.numpy()
+        return cost, indices, values
 
 
 
@@ -2068,17 +2100,25 @@ class fofe_mention_net_v3( mention_net_base ):
                 result = Variable(
                     torch.from_numpy( batch.astype(numpy.float32) )
                 )
+            if self.use_cuda:
+                result = result.cuda()
             return result
 
 
     def tofile( self, filename ):
+        if self.use_cuda:
+            self.network.cpu()
         torch.save( self.network.state_dict(), filename )
         with open( filename + '.config', 'wb' ) as fp:
             cPickle.dump( self.config, fp )
+        if self.use_cuda:
+            self.network.cuda()
 
 
     def fromfile( self, filename ):
         self.network.load_state_dict( torch.load( filename ) )
+        if self.use_cuda:
+            self.network.cuda()
 
 
 ######################################################################

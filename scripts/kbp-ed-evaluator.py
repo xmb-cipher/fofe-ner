@@ -55,6 +55,8 @@ if __name__ == '__main__':
 
         if config.version == 2:
             mention_net = fofe_mention_net_v2( config )
+        elif config.version == 3:
+            mention_net = fofe_mention_net_v3( config )
         else:
             mention_net = fofe_mention_net( config )
         mention_net.fromfile( basename )
@@ -115,10 +117,10 @@ if __name__ == '__main__':
             texts, tags, failures = processed.split( u'\n\n\n', 2 )
             texts = [ text.split( u'\n' ) for text in texts.split( u'\n\n' ) ]
             
-            target_func = lambda x: x['target'] if config.version == 2 else x[-1]
+            target_func = lambda x: x['target'] if config.version > 1 else x[-1]
 
             for i, mention_net in enumerate( mention_net_list ):
-                if config.version == 2:
+                if config.version > 1:
                     data = batch_constructor_v2( 
                         imap( lambda x: x[:4], LoadED( full_name ) ),
                         numericizer1, 

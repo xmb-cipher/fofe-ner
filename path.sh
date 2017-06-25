@@ -141,21 +141,21 @@ function RunV2 {
 }
 
 
-# function nfold2single {
-#     base=${1}
-#     if [ -z ${base} ]
-#     then
-#         CRITICAL "no basename is provided"
-#     else
-#         for i in `seq 0 4`
-#         do
-#             ln -s \
-#                 "${base}-case-sensitive.wordlist" \
-#                 "${base}-${i}-case-sensitive.wordlist"
-#             ln -s \
-#                 "${base}-case-insensitive.wordlist" \
-#                 "${base}-${i}-case-insensitive.wordlist"
-#             ln -s "${base}.pkl" "${base}-${i}.pkl"
-#         done
-#     fi
-# }
+function nfold2single {
+    base=${1}
+    if [ -z ${base} ]
+    then
+        CRITICAL "no basename is provided"
+    else
+        for i in `seq 0 4`
+        do
+            ln -s \
+                "${base}-case-sensitive.wordlist" \
+                "${base}-${i}-case-sensitive.wordlist"
+            ln -s \
+                "${base}-case-insensitive.wordlist" \
+                "${base}-${i}-case-insensitive.wordlist"
+            ln -s "${base}.pkl" "${base}-${i}.pkl"
+        done
+    fi
+}

@@ -150,9 +150,9 @@ if __name__ == '__main__':
     if args.version == 2:
         mention_net = fofe_mention_net_v2( config )
     elif args.version == 3:
-        import torch.optim as optim
+        import torch.optim.lr_scheduler as lr_scheduler
         mention_net = fofe_mention_net_v3( config )
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        scheduler = lr_scheduler.ReduceLROnPlateau(
             mention_net.optimizer,
             mode = 'min',
             factor = 0.5,
