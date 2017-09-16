@@ -32,12 +32,13 @@ GOLD=${GOLD_DIR}/`basename $3`
 INFO "GOLD == ${GOLD}"
 
 export PYTHONPATH="${THIS_DIR}"
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-""}
-INFO "CUDA_VISIBLE_DEVICES == '${CUDA_VISIBLE_DEVICES}'"
+export CUDA_VISIBLE_DEVICES=''
+# export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-""}
+# INFO "CUDA_VISIBLE_DEVICES == '${CUDA_VISIBLE_DEVICES}'"
 
 BUFFER_DIR=`mktemp -d`
 INFO "BUFFER_DIR == ${BUFFER_DIR}"
-# trap "rm -rf ${BUFFER_DIR} > /dev/null" EXIT
+trap "rm -rf ${BUFFER_DIR} > /dev/null" EXIT
 mkdir -p ${BUFFER_DIR}/labeled
 mkdir -p ${BUFFER_DIR}/result
 mkdir -p ${BUFFER_DIR}/report

@@ -46,8 +46,14 @@ if __name__ == '__main__':
         logger.info( config.__dict__ )
         config_list.append( config )
 
-        threshold += numpy.asarray( config.threshold, dtype = numpy.float32 )
-        config.algorithm = tuple(config.algorithm)
+        if isinstance( config.threshold, list ):
+            threshold += numpy.asarray( config.threshold, dtype = numpy.float32 )
+        else:
+            threshold += numpy.asarray( [0.8, 0.8], dtype = numpy.float32 )
+        try:
+            config.algorithm = tuple(config.algorithm)
+        except:
+            config.algorithm = (2, 1)
         if config.algorithm in algorithm:
             algorithm[config.algorithm] += 1
         else:

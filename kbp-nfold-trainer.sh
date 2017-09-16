@@ -107,16 +107,17 @@ fi
 
 INFO "training ... "
 
+WORKER_ID="$(seq 0 4)"
 PROCESSED_DATA=$(for i in $(seq 0 4); do printf "${dir}/split-${i} "; done)
 MODEL=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/${MODEL_BASE}-${j} "; done)
 LOG_FILE=$(for j in $(seq 0 4); do printf "${this_dir}/kbp-result/${MODEL_BASE}-${j}.log "; done)
-
+BUFF_DIR=$(for j in $(seq 0 4); do printf "${dir}/split-${j} "; done)
 
 
 # --cleanup option fails to remove folders
 # parallel -env --link -S "image,music,audio,voice,language" \
 
-CMD="parallel -env --link -j1"
+CMD="parallel -env --link -j2 -k -S : --sshdelay 10"
 
 if [ -z ${CUDA_VISIBLE_DEVICES} ]
 then
@@ -126,16 +127,17 @@ then
         # SERVER_LIST="ea31,ea32,ea33,ea34,ea35"
     fi
     INFO "5 trainers are running on ${SERVER_LIST}"
-    CMD="parallel -env --link -j5 -S ${SERVER_LIST} --basefile ${dir}"
+    CMD="parallel -env --link -j5 -k -S ${SERVER_LIST} --sshdelay 10 --basefile ${dir}"
 fi
 
 ${CMD} \
     ${this_dir}/scripts/kbp-ed-trainer.sh \
+    ::: ${WORKER_ID} \
     ::: ${embedding_path} \
     ::: $PROCESSED_DATA \
     ::: "--layer_size" ::: "512,512,512" \
     ::: "--n_batch_size" ::: "512" \
-    ::: "--learning_rate" ::: "0.128" \
+    ::: "--learning_rate" ::: "0.1024" \
     ::: "--momentum" ::: "0.9" \
     ::: "--max_iter" ::: "${N_EPOCH:-256}" \
     ::: "--feature_choice" ::: "1023" \
@@ -144,7 +146,7 @@ ${CMD} \
     ::: "--word_alpha" ::: "0.5" \
     ::: "--language" ::: "${language}" \
     ::: "--model" :::+ $MODEL \
-    ::: "--buffer_dir" ::: "${dir}" \
+    ::: "--buffer_dir" ::: ${BUFF_DIR} \
     ::: "--logfile" :::+ $LOG_FILE \
     ::: "--skip_test" \
     ::: "--version" ::: ${VERSION} \
@@ -152,7 +154,7 @@ ${CMD} \
     ${OPTION_2ND} 
  
 
-# export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=''
 INFO "evaluating ... "
 
 ${this_dir}/scripts/kbp-nfold-eval.py \
