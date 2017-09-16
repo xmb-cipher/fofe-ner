@@ -271,7 +271,7 @@ class mention_net_base( object ):
 
 
 class fofe_mention_net( mention_net_base ):
-    def __init__( self, config = None, gpu_option = 0.96 ):
+    def __init__( self, config = None, gpu_option = 0 ):
         """
         Parameters
         ----------
@@ -290,7 +290,14 @@ class fofe_mention_net( mention_net_base ):
         self.graph = tf.Graph()
 
         if gpu_option is not None:
-            gpu_option = tf.GPUOptions( per_process_gpu_memory_fraction = gpu_option )
+            if gpu_option > 0:
+                gpu_option = tf.GPUOptions( 
+                    per_process_gpu_memory_fraction = gpu_option 
+                )
+            else:
+                gpu_option = tf.GPUOptions(
+                    allow_growth = True
+                )
             self.session = tf.Session( 
                 config = tf.ConfigProto( 
                     gpu_options = gpu_option
@@ -888,6 +895,7 @@ class fofe_mention_net( mention_net_base ):
         feature_list = used
 
         feature = tf.concat( feature_list, axis = 1 )
+        self.feature = feature  # I expose this for debug purpose
 
         # if hope is used, add one linear layer
         if self.config.hope_out > 0:
@@ -1454,6 +1462,7 @@ class fofe_mention_net_v2( mention_net_base ):
         feature_list = used
 
         feature = tf.concat( feature_list, 1 )
+        self.feature = feature  # I expose this for debug purpose
 
         layer_output = [ tf.nn.dropout( feature, self.keep_prob ) ]
 
@@ -1906,14 +1915,14 @@ class _FofeNet( nn.Module ):
             feature.append( 
                 self.char_fofe[0].forward(
                     self.char_embed.forward(
-                        mini_batch['char']['left']
+                        mini_batch['char']['left'][:,1:]
                     )
                 )
             )
             feature.append( 
                 self.char_fofe[1].forward(
                     self.char_embed.forward(
-                        mini_batch['char']['right']
+                        mini_batch['char']['right'][:,1:]
                     )
                 )
             )
@@ -1947,7 +1956,7 @@ class _FofeNet( nn.Module ):
                 mini_batch['char']['left']
             ).unsqueeze( 1 )
             for m in self.conv:
-                x, _ = m.forward( char_cube ).max(2)
+                x, _ = F.relu( m.forward( char_cube ) ).max(2)
                 feature.append( x.view(batch_size, -1) )
 
         output = torch.cat( feature, 1 )
@@ -1995,40 +2004,40 @@ class fofe_mention_net_v3( mention_net_base ):
         self.init_lr = config.learning_rate
         logger.info( 'optimizer == %s' % self.config.optimizer )
         # if self.config.algorithm == 'adam':
-        self.optimizer = optim.Adam(
+        # self.optimizer = optim.Adam(
+        #     [ { 'params' : self.network.word_embed1.parameters(),
+        #         'lr' : self.config.learning_rate / 4 },
+        #       { 'params' : self.network.word_embed2.parameters(),
+        #         'lr' : self.config.learning_rate / 4 },
+        #       { 'params' : self.network.char_embed.parameters(),
+        #         'lr' : self.config.learning_rate / 2 },
+        #       { 'params' : self.network.ner_embed.parameters() },
+        #       { 'params' : self.network.linears.parameters() },
+        #       { 'params' : self.network.conv.parameters() },
+        #       { 'params' : self.network.conv_embed.parameters() }
+        #     ],
+        #     lr = config.learning_rate,
+        #     eps = 0.1
+        # )
+        # else:
+        self.optimizer = optim.SGD(
             [ { 'params' : self.network.word_embed1.parameters(),
-                'lr' : self.config.learning_rate / 4 },
+                'lr' : self.config.learning_rate / 2 },
               { 'params' : self.network.word_embed2.parameters(),
-                'lr' : self.config.learning_rate / 4 },
+                'lr' : self.config.learning_rate / 2 },
               { 'params' : self.network.char_embed.parameters(),
                 'lr' : self.config.learning_rate / 2 },
-              { 'params' : self.network.ner_embed.parameters() },
-              { 'params' : self.network.linears.parameters() },
-              { 'params' : self.network.conv.parameters() },
-              { 'params' : self.network.conv_embed.parameters() }
+              { 'params' : self.network.ner_embed.parameters(),
+                'momentum' : self.config.momentum },
+              { 'params' : self.network.linears.parameters(),
+                'momentum' : self.config.momentum },
+              { 'params' : self.network.conv.parameters(),
+                'momentum' : self.config.momentum },
+              { 'params' : self.network.conv_embed.parameters(),
+                'momentum' : self.config.momentum }
             ],
             lr = config.learning_rate,
-            eps = 0.1
         )
-        # else:
-        #     self.optimizer = optim.SGD(
-        #         [ { 'params' : self.network.word_embed1.parameters(),
-        #             'lr' : self.config.learning_rate / 4 },
-        #           { 'params' : self.network.word_embed2.parameters(),
-        #             'lr' : self.config.learning_rate / 4 },
-        #           { 'params' : self.network.char_embed.parameters(),
-        #             'lr' : self.config.learning_rate / 2 },
-        #           { 'params' : self.network.ner_embed.parameters(),
-        #             'momentum' : self.config.momentum },
-        #           { 'params' : self.network.linears.parameters(),
-        #             'momentum' : self.config.momentum },
-        #           { 'params' : self.network.conv.parameters(),
-        #             'momentum' : self.config.momentum },
-        #           { 'params' : self.network.conv_embed.parameters(),
-        #             'momentum' : self.config.momentum }
-        #         ],
-        #         lr = config.learning_rate,
-        #     )
 
         self.use_cuda = torch.cuda.is_available()
         logger.info( 'use_cuda == %s' % str(self.use_cuda) )

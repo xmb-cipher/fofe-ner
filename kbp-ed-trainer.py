@@ -152,12 +152,17 @@ if __name__ == '__main__':
     elif args.version == 3:
         import torch.optim.lr_scheduler as lr_scheduler
         mention_net = fofe_mention_net_v3( config )
-        scheduler = lr_scheduler.ReduceLROnPlateau(
+        # scheduler = lr_scheduler.ReduceLROnPlateau(
+        #     mention_net.optimizer,
+        #     mode = 'min',
+        #     factor = 0.5,
+        #     patience = 16,
+        #     min_lr = 0.001
+        # )
+        scheduler = optim.lr_scheduler.StepLR( 
             mention_net.optimizer,
-            mode = 'min',
-            factor = 0.5,
-            patience = 16,
-            min_lr = 0.001
+            1,
+            gamma = 0.5 ** (4./ config.max_iter)
         )
     else:
         mention_net = fofe_mention_net( config )
@@ -507,9 +512,9 @@ if __name__ == '__main__':
                 logger.info( '%s\n%s' % ('test', info) ) 
 
         if args.version == 3:
-            scheduler.step( train_cost )
-        else:
-            mention_net.config.learning_rate *= 0.5 ** ((4./ config.max_iter) if config.drop_rate > 0 else (1./ 2))
+            # scheduler.step( train_cost )
+            scheduler.step()
+        mention_net.config.learning_rate *= 0.5 ** ((4./ config.max_iter) if config.drop_rate > 0 else (1./ 2))
         mention_net.config.drop_rate *= 0.5 ** (2./ config.max_iter)
 
     logger.info( 'results are written in kbp-result/kbp-{valid,test}.predicted' )

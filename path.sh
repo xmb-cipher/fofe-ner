@@ -143,18 +143,33 @@ function RunV2 {
 
 function nfold2single {
     base=${1}
+    lang=${2:-eng}
     if [ -z ${base} ]
     then
         CRITICAL "no basename is provided"
     else
         for i in `seq 0 4`
         do
-            ln -s \
-                "${base}-case-sensitive.wordlist" \
-                "${base}-${i}-case-sensitive.wordlist"
-            ln -s \
-                "${base}-case-insensitive.wordlist" \
-                "${base}-${i}-case-insensitive.wordlist"
+            if [ ${lang} != 'cmn' ]
+            then
+                ln -s \
+                    "${base}-case-sensitive.wordlist" \
+                    "${base}-${i}-case-sensitive.wordlist"
+                ln -s \
+                    "${base}-case-insensitive.wordlist" \
+                    "${base}-${i}-case-insensitive.wordlist"
+            else
+                ln -s \
+                    "${base}-avg.wordlist" \
+                    "${base}-${i}-avg.wordlist"
+                ln -s \
+                    "${base}-char.wordlist" \
+                    "${base}-${i}-char.wordlist"
+                ln -s \
+                    "${base}-word.wordlist" \
+                    "${base}-${i}-word.wordlist"
+                ln -s "${base}.wubi" "${base}-${i}.wubi"
+            fi
             ln -s "${base}.pkl" "${base}-${i}.pkl"
         done
     fi

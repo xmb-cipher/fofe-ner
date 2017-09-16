@@ -554,14 +554,16 @@ cdef class processed_sentence:
         """
 
         cdef vocabulary vocab
+        cdef vector[string] sent_utf8
 
         if language != 'cmn':
             for w in sentence:
+                sent_utf8.push_back( w.encode('utf8') )
                 self.sentence.push_back(  
                     u''.join( c if ord(c) < 128 else chr(ord(c) % 32) for c in list(w) ) 
                 )
             vocab = numericizer
-            vocab.sentence2indices( self.sentence, self.numeric )
+            vocab.sentence2indices( sent_utf8, self.numeric )
         else:
             for w in sentence:
                 self.sentence.push_back(
@@ -2127,7 +2129,7 @@ class batch_constructor_v2:
         bow1v[:,:] = pad1
         lw3v[:,:] = pad2
         rw3v[:,:] = pad2
-        lw4v[:,:] = pad1
+        lw4v[:,:] = pad2
         rw4v[:,:] = pad2
         bow2v[:,:] = pad2
 
