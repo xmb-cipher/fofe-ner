@@ -90,6 +90,7 @@ then
                 next=$((RANDOM % 2))
                 if [ ${next} -eq 0 ]
                 then
+                    [ ${YEAR} -ne 2017 ] && \
                     ln -s ${f} ${dir}/split-${i}/${language}-eval-parsed/${fid}
                 else
                     ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/${fid}
@@ -102,8 +103,27 @@ then
     INFO "iflytek-data is processed"
 fi
 
-# DEBUG
-# while true; do sleep 128; done
+
+if [ ${YEAR} -eq 2017 ] && [ ! -z ${INCLUDE2015+X} ] 
+then
+    INFO "PATH2015 == ${PATH2015}"
+    path2015=${dir}/kbp2015path
+    cp -f -R -L ${PATH2015} ${path2015}
+
+    for f in `find -L ${path2015} -type f`
+    do
+        x=$((RANDOM % 5))
+        for i in `seq 0 4`
+        do
+            if [ ${x} -ne ${i} ]
+            then
+                ln -s ${f} ${dir}/split-${i}/${language}-train-parsed/copy-${c}-`basename ${f}`
+            fi
+        done
+    done
+    INFO "KBP2015 data is included in KBP2017training"
+fi
+
 
 INFO "training ... "
 
@@ -117,7 +137,9 @@ BUFF_DIR=$(for j in $(seq 0 4); do printf "${dir}/split-${j} "; done)
 # --cleanup option fails to remove folders
 # parallel -env --link -S "image,music,audio,voice,language" \
 
-CMD="parallel -env --link -j2 -k -S : --sshdelay 10"
+
+[ ! -z ${IFLYTEK+X} ] && N_JOB=2
+CMD="parallel -env --link -j${N_JOB} -k -S : --sshdelay 10"
 
 if [ -z ${CUDA_VISIBLE_DEVICES} ]
 then
