@@ -19,23 +19,46 @@ if __name__ == '__main__':
 
     solution = {}
 
-    cnt, duplicate, disagree = 0, 0, 0
+    nil_cnt = 0
+    for f in os.listdir( args.rspecifier ):
+        n_nil = 0
+        full_name = os.path.join( args.rspecifier, f )
+        with codecs.open( full_name, 'rb', 'utf8' ) as in_file:
+            for line in in_file:
+                tokens = line.strip().split(u'\t')
+                key, score = tokens[3], tokens[7]
+                if tokens[4].startswith('NIL'):
+                    # linking is done separately, they all start with NIL1
+                    # so we have to increment the NIL count.
+                    mid = 'NIL%d' % (int(tokens[4][3:]) + nil_cnt)
+                    n_nil = max(n_nil, int(tokens[4][3:]))
+                else:
+                    mid = tokens[4]
+                if float(tokens[7]) > 1.0:
+                    tokens[7] = '1.0'
+                if key not in solution or score > solution[key]['score']:
+                    solution[key] = {
+                        'spelling' : tokens[2],
+                        'mid' : mid,
+                        'ed-type1' : tokens[5],
+                        'ed-type2' : tokens[6],
+                        'score' : tokens[7]
+                    }
+        nil_cnt += n_nil
+        logger.info( '%s processed' % f )
+
+
     with codecs.open( args.wspecifier, 'wb', 'utf8' ) as out_file:
-        for f in os.listdir( args.rspecifier ):
-            full_name = os.path.join( args.rspecifier, f )
-            with codecs.open( full_name, 'rb', 'utf8' ) as in_file:
-                for line in in_file:
-                    tokens = line.split( u'\t' )
-                    if len(tokens) == 8:
-                        if tokens[3] not in solution:
-                            solution[ tokens[3] ] = (tokens[5], tokens[6])
-                            cnt += 1
-                            tokens[0] = u'YorkNRM%d' % args.run_id
-                            tokens[1] = u'TEDL16_EVAL_%08d' % cnt
-                            out_file.write( u'\t'.join( tokens ) )
-                        else:
-                            duplicate += 1
-                            if solution[ tokens[3] ] != (tokens[5], tokens[6]):
-                                disagree += 1
-            logger.info( '%s processed' % f )
-        logger.info( '%d duplicate, %d disagree' % (duplicate, disagree) )
+        for cnt, key in enumerate( sorted(solution.keys()) ):
+            ans = solution[key]
+            out_str = u'\t'.join( [ 
+                u'YorkNRM%d' % args.run_id,  
+                u'TEDL17_EVAL_%06d' % cnt, 
+                ans['spelling'], 
+                key,
+                ans['mid'], 
+                ans['ed-type1'], 
+                ans['ed-type2'], 
+                ans['score']
+            ] )
+            out_file.write( out_str + u'\n' )

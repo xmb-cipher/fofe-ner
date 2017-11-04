@@ -1520,8 +1520,8 @@ def __decode_algo_1( sentence, estimate, table, threshold, callback = None ):
 
     estimate = list(estimate - removed)
     estimate.sort( key = lambda x : x[0] )
-    estimate = __merge_adjacient( estimate )
-    return estimate
+    # estimate = __merge_adjacient( estimate )
+    return set(estimate)
 
 
 
@@ -1550,8 +1550,8 @@ def __decode_algo_2( sentence, estimate, table, threshold, callback = None ):
         if i > 0 and best[-2][0] > best[-1][0]:
             best[-1] = best[-2]
     estimate = [ (b, e, candidate[(b, e)]) for (b, e) in best[-1][1] ]
-    estimate = __merge_adjacient( estimate )
-    return estimate
+    # estimate = __merge_adjacient( estimate )
+    return set(estimate)
 
 
 
