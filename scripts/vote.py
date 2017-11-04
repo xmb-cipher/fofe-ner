@@ -19,6 +19,7 @@ if __name__ == '__main__':
 
     logger.info( args )
 
+    weight = 1. / args.model_cnt
 
     solution = {}
     for i in xrange( args.model_cnt ):
@@ -28,13 +29,12 @@ if __name__ == '__main__':
                 tokens = line.strip().split(u'\t')
                 key = (tokens[3], tokens[5], tokens[6])
                 if key in solution:
-                    solution[key]['score'] = 0.2 + solution[key]['score']
+                    solution[key]['score'] = weight + solution[key]['score']
                 else:
-                    solution[key] = { 'spelling' : tokens[2], 'score' : 0.2 }
+                    solution[key] = { 'spelling' : tokens[2], 'score' : weight }
         logger.info( '%d.tsv processed' % i )
     logger.info( len(solution) )
 
-    weight = 1. / args.model_cnt
     for i in xrange(args.model_cnt):
         threshold = weight * i
         cnt = 0 
